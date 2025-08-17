@@ -1,0 +1,25 @@
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: proplet-demo
+spec:
+  connectionConfig:
+    channelId: 9085059a-3e57-4e84-8b31-f8bb4a732909
+    clientId: cf99accc-ee72-4a7d-8ef3-f73cc4245650
+    clientKey: 2989e261-c835-40a4-aa62-59720c560527
+    domainId: ed1081b8-3aba-4246-aec6-0250367539c7
+    mqttAddress: tcp://0.tcp.in.ngrok.io:18510
+    mqttQos: 1
+    mqttTimeout: 10s
+  external:
+  k8s:
+    image: docker.io/rodneydav/propeller-k8s-operator-proplet:latest
+    logLevel: info
+    replicas: 1
+  resources:
+    cpu: 100m
+    memory: 100Mi
+  type: k8s

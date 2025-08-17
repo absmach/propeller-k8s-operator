@@ -1,0 +1,158 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: tasks.propeller.propeller.abstractmachines.fr
+spec:
+  group: propeller.propeller.abstractmachines.fr
+  names:
+    kind: Task
+    listKind: TaskList
+    plural: tasks
+    singular: task
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.assignedProplet
+      name: Proplet
+      type: string
+    - jsonPath: .status.startTime
+      name: Start Time
+      type: date
+    - jsonPath: .status.finishTime
+      name: Duration
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Task is the Schema for the tasks API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Task
+            properties:
+              cliArgs:
+                items:
+                  type: string
+                type: array
+              file:
+                format: byte
+                type: string
+              imageUrl:
+                type: string
+              name:
+                type: string
+              preferredPropletType:
+                enum:
+                - k8s
+                - external
+                - any
+                type: string
+              propletSelector:
+                description: Inputs   map[string]any `json:"inputs,omitempty"`
+                properties:
+                  matchCapabilities:
+                    items:
+                      type: string
+                    type: array
+                  matchDeviceTypes:
+                    items:
+                      type: string
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  propletId:
+                    type: string
+                type: object
+              resourceRequirements:
+                properties:
+                  cpu:
+                    description: CPU capacity (e.g., "1000m" for 1 CPU core)
+                    type: string
+                  custom:
+                    additionalProperties:
+                      type: string
+                    description: Custom resource constraints
+                    type: object
+                  memory:
+                    description: Memory capacity (e.g., "1Gi")
+                    type: string
+                type: object
+            required:
+            - imageUrl
+            - name
+            - propletSelector
+            - resourceRequirements
+            type: object
+          status:
+            description: status defines the observed state of Task
+            properties:
+              assignedProplet:
+                type: string
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              error:
+                description: Results         interface{}     `json:"results,omitzero"`
+                type: string
+              finishTime:
+                format: date-time
+                type: string
+              phase:
+                type: string
+              startTime:
+                format: date-time
+                type: string
+            required:
+            - conditions
+            - finishTime
+            - phase
+            - startTime
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
