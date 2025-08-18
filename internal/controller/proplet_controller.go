@@ -18,10 +18,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
+	"github.com/absmach/propeller/internal/mqtt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,10 +36,16 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var baseTopic = "m/%s/c/%s/messages"
+
 // PropletReconciler reconciles a Proplet object
 type PropletReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme             *runtime.Scheme
+	livelinessInterval time.Duration
+	lastSeenThreshold  time.Duration
+	pubsub             mqtt.PubSub
+	baseTopic          string
 }
 
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list;watch;create;update;patch;delete
@@ -73,9 +81,7 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	case propellerv1.K8sProplet:
 		return r.reconcileK8sProplet(ctx, &proplet)
 	case propellerv1.ExternalProplet:
-		logger.Info("Reconciling Proplet", "type", proplet.Spec.Type)
-
-		return ctrl.Result{}, nil
+		return r.reconcileExternalProplet(ctx, &proplet)
 	default:
 		err := fmt.Errorf("unknown proplet type: %s", proplet.Spec.Type)
 		logger.Error(err, "unknown proplet type")
@@ -123,7 +129,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: time.Minute}, nil
+	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
 }
 
 func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet) *appsv1.Deployment {
@@ -237,8 +243,148 @@ func (r *PropletReconciler) updateK8sPropletStatus(ctx context.Context, proplet 
 	return r.Status().Update(ctx, proplet)
 }
 
+func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {
+	logger := logf.FromContext(ctx).WithValues("proplet", proplet.Name, "type", proplet.Spec.Type)
+
+	if proplet.Spec.External == nil {
+		return ctrl.Result{}, fmt.Errorf("external spec is required for external proplet type")
+	}
+
+	if proplet.Status.LastSeen != nil {
+		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
+		if timeSinceLastSeen > r.lastSeenThreshold {
+			proplet.Status.Phase = propellerv1.PropletOfflinePhase
+		} else {
+			proplet.Status.Phase = propellerv1.PropletRunningPhase
+		}
+	} else {
+		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+	}
+
+	if err := r.Status().Update(ctx, proplet); err != nil {
+		logger.Error(err, "Failed to update external proplet status")
+
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("External proplet status updated")
+
+	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
+}
+
+func (r *PropletReconciler) mqttLivenessHandler(msg map[string]any) error {
+	name, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid name")
+	}
+	if name == "" {
+		return errors.New("name is empty")
+	}
+	namespace, ok := msg["namespace"].(string)
+	if !ok {
+		return errors.New("invalid namespace")
+	}
+	if namespace == "" {
+		return errors.New("namespace is empty")
+	}
+	logger := logf.FromContext(context.Background()).WithValues("name", name)
+
+	req := ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	var proplet propellerv1.Proplet
+	if err := r.Get(context.Background(), req.NamespacedName, &proplet); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("Proplet resource not found, ignoring")
+
+			return nil
+		}
+
+		logger.Error(err, "unable to fetch Proplet")
+
+		return err
+	}
+
+	now := metav1.Now()
+	proplet.Status.LastSeen = &now
+
+	if proplet.Status.LastSeen != nil {
+		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
+		if timeSinceLastSeen > r.lastSeenThreshold {
+			proplet.Status.Phase = propellerv1.PropletOfflinePhase
+		} else {
+			proplet.Status.Phase = propellerv1.PropletRunningPhase
+		}
+	} else {
+		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+	}
+
+	if err := r.Status().Update(context.Background(), &proplet); err != nil {
+		logger.Error(err, "Failed to update external proplet status")
+
+		return err
+	}
+
+	return nil
+}
+
+func (r *PropletReconciler) mqttResultHandler(msg map[string]any) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok {
+		return errors.New("invalid task id")
+	}
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+
+	var tasks propellerv1.TaskList
+	if err := r.List(context.Background(), &tasks, client.InNamespace("default")); err != nil {
+		return err
+	}
+
+	task := tasks.Items[0]
+
+	task.Status.Error = fmt.Sprintf("%v", msg["results"])
+	task.Status.Phase = propellerv1.TaskCompletedPhase
+	task.Status.FinishTime = &metav1.Time{Time: time.Now()}
+
+	if err := r.Status().Update(context.Background(), &task); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *PropletReconciler) mqttHandler() func(topic string, msg map[string]any) error {
+	return func(topic string, msg map[string]any) error {
+		switch topic {
+		case r.baseTopic + "/control/proplet/alive":
+			return r.mqttLivenessHandler(msg)
+		case r.baseTopic + "/control/proplet/results":
+			return r.mqttResultHandler(msg)
+		}
+
+		return nil
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
-func (r *PropletReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *PropletReconciler) SetupWithManager(
+	domainID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
+) error {
+	r.livelinessInterval = livelinessInterval
+	r.lastSeenThreshold = lastSeenThreshold
+	r.pubsub = pubsub
+	r.baseTopic = fmt.Sprintf(baseTopic, domainID, channelID)
+
+	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerv1.Proplet{}).
 		Named("proplet").

@@ -24,6 +24,8 @@ import (
 	"time"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
+	"github.com/absmach/propeller/internal/mqtt"
+	"github.com/absmach/propeller/internal/scheduler"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,7 +37,12 @@ import (
 // TaskReconciler reconciles a Task object
 type TaskReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	scheduler scheduler.Scheduler
+	domainID  string
+	channelID string
+	pubsub    mqtt.PubSub
+	baseTopic string
 }
 
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -72,11 +79,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return r.scheduleTask(ctx, &task)
 	case propellerv1.TaskPendingPhase:
 		return r.executeTask(ctx, &task)
-	// case propellerv1.TaskPhaseRunning:
-	// 	return r.monitorTask(ctx, &task)
-	// case propellerv1.TaskPhaseCompleted, propellerv1.TaskPhaseFailed:
-	// 	// Task is finished, no action needed
-	// 	return ctrl.Result{}, nil
+	case propellerv1.TaskRunningPhase:
+		return r.monitorTask(ctx, &task)
+	case propellerv1.TaskCompletedPhase, propellerv1.TaskFailedPhase:
+		return ctrl.Result{}, nil
 	default:
 		logger.Error(errors.New("unknown task phase"), "unknown task phase", "phase", task.Status.Phase)
 
@@ -113,8 +119,12 @@ func (r *TaskReconciler) scheduleTask(ctx context.Context, task *propellerv1.Tas
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	// TODO: Implement scheduling logic
-	selectedProplet := proplets[0]
+	selectedProplet, err := r.scheduler.SelectProplet(*task, proplets)
+	if err != nil {
+		logger.Error(err, "Failed to select proplet")
+
+		return ctrl.Result{}, err
+	}
 
 	now := metav1.Now()
 	task.Status = propellerv1.TaskStatus{
@@ -221,7 +231,23 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 		return r.scheduleTask(ctx, task)
 	}
 
-	// Update task status
+	topic := r.baseTopic + "/control/manager/start"
+	payload := map[string]any{
+		"id":        string(task.UID),
+		"name":      task.Spec.Name,
+		"state":     0,
+		"image_url": task.Spec.ImageURL,
+		"file":      task.Spec.File,
+		"inputs":    []uint64{10, 20},
+		"cli_args":  task.Spec.CLIArgs,
+	}
+
+	if err := r.pubsub.Publish(topic, payload); err != nil {
+		logger.Error(err, "Failed to publish task start command")
+
+		return ctrl.Result{}, err
+	}
+
 	now := metav1.Now()
 	task.Status.Phase = propellerv1.TaskRunningPhase
 	task.Status.StartTime = &now
@@ -237,20 +263,40 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 		return ctrl.Result{}, err
 	}
 
-	// Subscribe to task results
-	go r.subscribeToTaskResults(ctx, task)
-
 	logger.Info("Task execution started", "proplet", task.Status.AssignedProplet)
 
 	return ctrl.Result{RequeueAfter: time.Minute * 2}, nil
 }
 
-func (r *TaskReconciler) subscribeToTaskResults(_ context.Context, _ *propellerv1.Task) {
+func (r *TaskReconciler) monitorTask(ctx context.Context, task *propellerv1.Task) (ctrl.Result, error) {
+	if task.Status.StartTime != nil {
+		elapsed := time.Since(task.Status.StartTime.Time)
+		if elapsed > time.Hour {
+			task.Status.Phase = propellerv1.TaskFailedPhase
+			task.Status.Error = "Task execution timeout"
 
+			now := metav1.Now()
+			task.Status.FinishTime = &now
+
+			if err := r.Status().Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{}, nil
+		}
+	}
+
+	return ctrl.Result{RequeueAfter: time.Second * 1}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub) error {
+	r.scheduler = scheduler.NewRoundRobin()
+	r.domainID = domainID
+	r.channelID = channelID
+	r.pubsub = pubsub
+	r.baseTopic = fmt.Sprintf(baseTopic, domainID, channelID)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerv1.Task{}).
 		Named("task").

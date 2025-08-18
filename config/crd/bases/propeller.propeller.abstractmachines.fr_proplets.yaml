@@ -169,6 +169,9 @@ spec:
                 type: string
             required:
             - connectionConfig
+            - external
+            - k8s
+            - resources
             - type
             type: object
           status:

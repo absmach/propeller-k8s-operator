@@ -71,9 +71,9 @@ type PropletSpec struct {
 
 	// +kubebuilder:validation:Enum=k8s;external
 	Type             PropletKind          `json:"type"`
-	External         *ExternalPropletSpec `json:"external,omitempty"`
-	K8s              *K8sPropletSpec      `json:"k8s,omitempty"`
-	Resources        *PropletResources    `json:"resources,omitempty"`
+	External         *ExternalPropletSpec `json:"external,omitzero"`
+	K8s              *K8sPropletSpec      `json:"k8s,omitzero"`
+	Resources        *PropletResources    `json:"resources,omitzero"`
 	ConnectionConfig ConnectionConfig     `json:"connectionConfig"`
 }
 

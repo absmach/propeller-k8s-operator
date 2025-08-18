@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: cf99accc-ee72-4a7d-8ef3-f73cc4245650
+  name: proplet-demo
 spec:
   connectionConfig:
     channelId: 9085059a-3e57-4e84-8b31-f8bb4a732909
@@ -15,11 +15,11 @@ spec:
     mqttQos: 1
     mqttTimeout: 10s
   external:
-  k8s:
-    image: docker.io/rodneydav/propeller-k8s-operator-proplet:latest
-    logLevel: info
-    replicas: 1
+    deviceType: esp32
+    capabilities:
+      - temperature
+      - humidity
   resources:
     cpu: 100m
     memory: 100Mi
-  type: k8s
+  type: external

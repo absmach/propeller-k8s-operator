@@ -4,10 +4,10 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: task-sample
+  name: addition
 spec:
-  name: task-sample
-  imageUrl: mrstevenyaga/add.wasm
+  name: main
+  file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   propletSelector:
     propletId:
   resourceRequirements:

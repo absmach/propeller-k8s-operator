@@ -21,6 +21,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -39,6 +40,7 @@ import (
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
 	"github.com/absmach/propeller/internal/controller"
+	"github.com/absmach/propeller/internal/mqtt"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -64,6 +66,15 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var livelinessInterval time.Duration
+	var lastSeenThreshold time.Duration
+	var mqttAddress string
+	var mqttQoS uint
+	var mqttTimeout time.Duration
+	var domainID string
+	var channelID string
+	var clientID string
+	var clientKey string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -81,6 +92,17 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.DurationVar(&livelinessInterval, "liveliness-interval", 30*time.Second,
+		"The interval at which the liveliness probe is performed.")
+	flag.DurationVar(&lastSeenThreshold, "last-seen-threshold", 5*time.Minute,
+		"The threshold for the last seen timestamp.")
+	flag.StringVar(&mqttAddress, "mqtt-address", "tcp://0.tcp.in.ngrok.io:14460", "The address of the MQTT broker.")
+	flag.UintVar(&mqttQoS, "mqtt-qos", 0, "The QoS level of the MQTT messages.")
+	flag.DurationVar(&mqttTimeout, "mqtt-timeout", 30*time.Second, "The timeout for MQTT operations.")
+	flag.StringVar(&domainID, "domain-id", "ed1081b8-3aba-4246-aec6-0250367539c7", "The domain ID.")
+	flag.StringVar(&channelID, "channel-id", "9085059a-3e57-4e84-8b31-f8bb4a732909", "The channel ID.")
+	flag.StringVar(&clientID, "client-id", "cf99accc-ee72-4a7d-8ef3-f73cc4245650", "The client ID.")
+	flag.StringVar(&clientKey, "client-key", "2989e261-c835-40a4-aa62-59720c560527", "The client key.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -202,17 +224,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	mqttPubSub, err := mqtt.NewPubSub(
+		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to initialize mqtt pubsub")
+		os.Exit(1)
+	}
+
 	if err := (&controller.TaskReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
 	if err := (&controller.PropletReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
 		os.Exit(1)
 	}

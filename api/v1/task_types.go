@@ -68,7 +68,7 @@ type TaskSpec struct {
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	Name     string   `json:"name"`
-	ImageURL string   `json:"imageUrl"`
+	ImageURL string   `json:"imageUrl,omitempty"`
 	File     []byte   `json:"file,omitempty"`
 	CLIArgs  []string `json:"cliArgs,omitempty"`
 	// Inputs   map[string]any `json:"inputs,omitempty"`
