@@ -130,8 +130,8 @@ func (r *TaskReconciler) scheduleTask(ctx context.Context, task *propellerv1.Tas
 	task.Status = propellerv1.TaskStatus{
 		Phase:           propellerv1.TaskPendingPhase,
 		AssignedProplet: selectedProplet.Name,
-		StartTime:       &now,
-		FinishTime:      &now,
+		StartedAt:       &now,
+		FinishedAt:      &now,
 		Error:           "",
 		Conditions: []propellerv1.TaskCondition{{
 			Type:               propellerv1.ScheduledType,
@@ -250,7 +250,7 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 
 	now := metav1.Now()
 	task.Status.Phase = propellerv1.TaskRunningPhase
-	task.Status.StartTime = &now
+	task.Status.StartedAt = &now
 	task.Status.Conditions = append(task.Status.Conditions, propellerv1.TaskCondition{
 		Type:               propellerv1.StartedType,
 		Status:             metav1.ConditionTrue,
@@ -269,14 +269,14 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 }
 
 func (r *TaskReconciler) monitorTask(ctx context.Context, task *propellerv1.Task) (ctrl.Result, error) {
-	if task.Status.StartTime != nil {
-		elapsed := time.Since(task.Status.StartTime.Time)
+	if task.Status.StartedAt != nil {
+		elapsed := time.Since(task.Status.StartedAt.Time)
 		if elapsed > time.Hour {
 			task.Status.Phase = propellerv1.TaskFailedPhase
 			task.Status.Error = "Task execution timeout"
 
 			now := metav1.Now()
-			task.Status.FinishTime = &now
+			task.Status.FinishedAt = &now
 
 			if err := r.Status().Update(ctx, task); err != nil {
 				return ctrl.Result{}, err

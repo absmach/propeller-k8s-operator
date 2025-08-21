@@ -21,10 +21,10 @@ spec:
     - jsonPath: .status.assignedProplet
       name: Proplet
       type: string
-    - jsonPath: .status.startTime
+    - jsonPath: .status.startedAt
       name: Start Time
       type: date
-    - jsonPath: .status.finishTime
+    - jsonPath: .status.finishedAt
       name: Duration
       type: string
     name: v1
@@ -61,6 +61,10 @@ spec:
                 type: string
               imageUrl:
                 type: string
+              inputs:
+                items:
+                  type: string
+                type: array
               name:
                 type: string
               preferredPropletType:
@@ -70,7 +74,6 @@ spec:
                 - any
                 type: string
               propletSelector:
-                description: Inputs   map[string]any `json:"inputs,omitempty"`
                 properties:
                   matchCapabilities:
                     items:
@@ -131,22 +134,31 @@ spec:
                   - type
                   type: object
                 type: array
-              error:
-                description: Results         interface{}     `json:"results,omitzero"`
+              createdAt:
+                format: date-time
                 type: string
-              finishTime:
+              error:
+                type: string
+              finishedAt:
                 format: date-time
                 type: string
               phase:
                 type: string
-              startTime:
+              results:
+                type: string
+              startedAt:
+                format: date-time
+                type: string
+              updatedAt:
                 format: date-time
                 type: string
             required:
             - conditions
-            - finishTime
+            - createdAt
+            - finishedAt
             - phase
-            - startTime
+            - startedAt
+            - updatedAt
             type: object
         required:
         - spec

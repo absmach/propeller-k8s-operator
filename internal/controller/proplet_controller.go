@@ -350,7 +350,7 @@ func (r *PropletReconciler) mqttResultHandler(msg map[string]any) error {
 
 	task.Status.Error = fmt.Sprintf("%v", msg["results"])
 	task.Status.Phase = propellerv1.TaskCompletedPhase
-	task.Status.FinishTime = &metav1.Time{Time: time.Now()}
+	task.Status.FinishedAt = &metav1.Time{Time: time.Now()}
 
 	if err := r.Status().Update(context.Background(), &task); err != nil {
 		return err

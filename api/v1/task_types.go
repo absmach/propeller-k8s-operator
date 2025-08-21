@@ -35,6 +35,7 @@ const (
 	AnyProplet      PropletKind = "any"
 
 	TaskPendingPhase   TaskPhase = "pending"
+	TashScheduledPhase TaskPhase = "scheduled"
 	TaskRunningPhase   TaskPhase = "running"
 	TaskCompletedPhase TaskPhase = "completed"
 	TaskFailedPhase    TaskPhase = "failed"
@@ -67,11 +68,11 @@ type TaskSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	Name     string   `json:"name"`
-	ImageURL string   `json:"imageUrl,omitempty"`
-	File     []byte   `json:"file,omitempty"`
-	CLIArgs  []string `json:"cliArgs,omitempty"`
-	// Inputs   map[string]any `json:"inputs,omitempty"`
+	Name            string           `json:"name"`
+	ImageURL        string           `json:"imageUrl,omitempty"`
+	File            []byte           `json:"file,omitempty"`
+	CLIArgs         []string         `json:"cliArgs,omitempty"`
+	Inputs          []string         `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	PreferredPropletType PropletKind       `json:"preferredPropletType,omitempty"`
@@ -91,13 +92,15 @@ type TaskStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Phase           TaskPhase    `json:"phase"`
-	AssignedProplet string       `json:"assignedProplet,omitempty"`
-	StartTime       *metav1.Time `json:"startTime,omitzero"`
-	FinishTime      *metav1.Time `json:"finishTime,omitzero"`
-	// Results         interface{}     `json:"results,omitzero"`
-	Error      string          `json:"error,omitempty"`
-	Conditions []TaskCondition `json:"conditions,omitzero"`
+	Phase           TaskPhase       `json:"phase"`
+	AssignedProplet string          `json:"assignedProplet,omitempty"`
+	CreatedAt       *metav1.Time    `json:"createdAt,omitzero"`
+	UpdatedAt       *metav1.Time    `json:"updatedAt,omitzero"`
+	StartedAt       *metav1.Time    `json:"startedAt,omitzero"`
+	FinishedAt      *metav1.Time    `json:"finishedAt,omitzero"`
+	Results         string          `json:"results,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	Conditions      []TaskCondition `json:"conditions,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -105,8 +108,8 @@ type TaskStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Proplet",type=string,JSONPath=`.status.assignedProplet`
-// +kubebuilder:printcolumn:name="Start Time",type=date,JSONPath=`.status.startTime`
-// +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.finishTime`
+// +kubebuilder:printcolumn:name="Start Time",type=date,JSONPath=`.status.startedAt`
+// +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.finishedAt`
 
 // Task is the Schema for the tasks API
 type Task struct {
