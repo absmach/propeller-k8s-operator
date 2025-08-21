@@ -16,9 +16,7 @@ limitations under the License.
 
 package v1
 
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -69,6 +67,7 @@ type TaskSpec struct {
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	Name            string           `json:"name"`
+	FunctionName    string           `json:"functionName"`
 	ImageURL        string           `json:"imageUrl,omitempty"`
 	File            []byte           `json:"file,omitempty"`
 	CLIArgs         []string         `json:"cliArgs,omitempty"`

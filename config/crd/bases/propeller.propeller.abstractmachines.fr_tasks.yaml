@@ -59,6 +59,8 @@ spec:
               file:
                 format: byte
                 type: string
+              functionName:
+                type: string
               imageUrl:
                 type: string
               inputs:
@@ -105,6 +107,7 @@ spec:
                     type: string
                 type: object
             required:
+            - functionName
             - name
             - propletSelector
             - resourceRequirements
