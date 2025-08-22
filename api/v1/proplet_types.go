@@ -16,7 +16,10 @@ limitations under the License.
 
 package v1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 type (
 	PropletPhase         string
@@ -27,7 +30,6 @@ const (
 	PropletInitializingPhase PropletPhase = "Initializing"
 	PropletRunningPhase      PropletPhase = "Running"
 	PropletOfflinePhase      PropletPhase = "Offline"
-	PropletFailedPhase       PropletPhase = "Failed"
 
 	PropletConditionReady     PropletConditionType = "Ready"
 	PropletConditionConnected PropletConditionType = "Connected"
@@ -44,10 +46,9 @@ type ExternalPropletSpec struct {
 }
 
 type K8sPropletSpec struct {
-	Image     string                `json:"image"`
-	LogLevel  string                `json:"logLevel,omitempty"`
-	Replicas  *int32                `json:"replicas,omitempty"`
-	Resources *metav1.LabelSelector `json:"resources,omitempty"`
+	Image    string `json:"image"`
+	LogLevel string `json:"logLevel,omitempty"`
+	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type ConnectionConfig struct {
@@ -69,9 +70,9 @@ type PropletSpec struct {
 
 	// +kubebuilder:validation:Enum=k8s;external
 	Type             PropletKind          `json:"type"`
-	External         *ExternalPropletSpec `json:"external,omitzero"`
-	K8s              *K8sPropletSpec      `json:"k8s,omitzero"`
-	Resources        *PropletResources    `json:"resources,omitzero"`
+	External         *ExternalPropletSpec `json:"external,omitempty,omitzero"`
+	K8s              *K8sPropletSpec      `json:"k8s,omitempty,omitzero"`
+	Resource         corev1.ResourceList  `json:"resources,omitzero"`
 	ConnectionConfig ConnectionConfig     `json:"connectionConfig"`
 }
 

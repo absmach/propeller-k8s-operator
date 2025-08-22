@@ -30,13 +30,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var baseTopic = "m/%s/c/%s/messages"
+var superMQBaseTopic = "m/%s/c/%s/messages"
 
 // PropletReconciler reconciles a Proplet object
 type PropletReconciler struct {
@@ -112,6 +113,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		}
 
 		logger.Info("Creating proplet deployment")
+
 		if err := r.Create(ctx, deployment); err != nil {
 			logger.Error(err, "Failed to create deployment")
 
@@ -129,7 +131,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet) *appsv1.Deployment {
@@ -156,6 +158,19 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 					"propeller.absmach.fr/proplet": proplet.Name,
 				},
 			},
+			Strategy: appsv1.DeploymentStrategy{
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "25%",
+					},
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "25%",
+					},
+				},
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -165,8 +180,15 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  fmt.Sprintf("%s-proplet", proplet.Name),
-							Image: proplet.Spec.K8s.Image,
+							Name:            fmt.Sprintf("%s-proplet", proplet.Name),
+							Image:           proplet.Spec.K8s.Image,
+							ImagePullPolicy: corev1.PullAlways,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    *proplet.Spec.Resource.Cpu(),
+									corev1.ResourceMemory: *proplet.Spec.Resource.Memory(),
+								},
+							},
 							Env: []corev1.EnvVar{
 								{
 									Name:  "PROPLET_LOG_LEVEL",
@@ -272,13 +294,13 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
 }
 
-func (r *PropletReconciler) mqttLivenessHandler(msg map[string]any) error {
-	name, ok := msg["proplet_id"].(string)
+func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[string]any) error {
+	propletId, ok := msg["proplet_id"].(string)
 	if !ok {
-		return errors.New("invalid name")
+		return errors.New("invalid proplet id")
 	}
-	if name == "" {
-		return errors.New("name is empty")
+	if propletId == "" {
+		return errors.New("proplet id is empty")
 	}
 	namespace, ok := msg["namespace"].(string)
 	if !ok {
@@ -287,30 +309,64 @@ func (r *PropletReconciler) mqttLivenessHandler(msg map[string]any) error {
 	if namespace == "" {
 		return errors.New("namespace is empty")
 	}
-	logger := logf.FromContext(context.Background()).WithValues("name", name)
+	logger := logf.FromContext(ctx).WithValues("proplet_id", propletId)
 
-	req := ctrl.Request{
-		NamespacedName: types.NamespacedName{
-			Name:      name,
-			Namespace: namespace,
-		},
+	var proplets propellerv1.PropletList
+	if err := r.List(ctx, &proplets, client.InNamespace(namespace)); err != nil {
+		return err
 	}
 
-	var proplet propellerv1.Proplet
-	if err := r.Get(context.Background(), req.NamespacedName, &proplet); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("Proplet resource not found, ignoring")
-
-			return nil
+	var proplet *propellerv1.Proplet
+	for i := range proplets.Items {
+		if proplets.Items[i].Spec.ConnectionConfig.ClientID == propletId {
+			proplet = &proplets.Items[i]
+			break
 		}
+	}
 
-		logger.Error(err, "unable to fetch Proplet")
+	if proplet == nil {
+		logger.Info("Proplet resource not found, ignoring")
 
-		return err
+		return nil
 	}
 
 	now := metav1.Now()
 	proplet.Status.LastSeen = &now
+
+	if proplet.Spec.Type == propellerv1.K8sProplet {
+		deployment := &appsv1.Deployment{}
+		deploymentName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s-proplet", proplet.Name),
+			Namespace: proplet.Namespace,
+		}
+
+		if err := r.Get(ctx, deploymentName, deployment); err == nil {
+			proplet.Status.K8sStatus = &propellerv1.K8sStatus{
+				ReadyReplicas:     deployment.Status.ReadyReplicas,
+				AvailableReplicas: deployment.Status.AvailableReplicas,
+			}
+			if deployment.Status.ReadyReplicas > 0 {
+				proplet.Status.Phase = propellerv1.PropletRunningPhase
+			} else {
+				proplet.Status.Phase = propellerv1.PropletInitializingPhase
+			}
+			proplet.Status.Conditions = []propellerv1.PropletCondition{
+				{
+					Type:               propellerv1.PropletConditionReady,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: now,
+					Reason:             "DeploymentReady",
+					Message:            fmt.Sprintf("Deployment has %d ready replicas", deployment.Status.ReadyReplicas),
+				},
+			}
+			if len(deployment.Spec.Template.Spec.Containers) > 0 {
+				proplet.Status.AvailableResources = &propellerv1.PropletResources{
+					CPU:    deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().String(),
+					Memory: deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().String(),
+				}
+			}
+		}
+	}
 
 	if proplet.Status.LastSeen != nil {
 		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
@@ -323,7 +379,9 @@ func (r *PropletReconciler) mqttLivenessHandler(msg map[string]any) error {
 		proplet.Status.Phase = propellerv1.PropletInitializingPhase
 	}
 
-	if err := r.Status().Update(context.Background(), &proplet); err != nil {
+	proplet.Status.LastSeen = &now
+
+	if err := r.Status().Update(ctx, proplet); err != nil {
 		logger.Error(err, "Failed to update external proplet status")
 
 		return err
@@ -332,7 +390,7 @@ func (r *PropletReconciler) mqttLivenessHandler(msg map[string]any) error {
 	return nil
 }
 
-func (r *PropletReconciler) mqttResultHandler(msg map[string]any) error {
+func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
 	if !ok {
 		return errors.New("invalid task id")
@@ -342,7 +400,7 @@ func (r *PropletReconciler) mqttResultHandler(msg map[string]any) error {
 	}
 
 	var tasks propellerv1.TaskList
-	if err := r.List(context.Background(), &tasks, client.InNamespace("default")); err != nil {
+	if err := r.List(ctx, &tasks, client.InNamespace("default")); err != nil {
 		return err
 	}
 
@@ -352,7 +410,7 @@ func (r *PropletReconciler) mqttResultHandler(msg map[string]any) error {
 	task.Status.Phase = propellerv1.TaskCompletedPhase
 	task.Status.FinishedAt = &metav1.Time{Time: time.Now()}
 
-	if err := r.Status().Update(context.Background(), &task); err != nil {
+	if err := r.Status().Update(ctx, &task); err != nil {
 		return err
 	}
 
@@ -363,9 +421,9 @@ func (r *PropletReconciler) mqttHandler() func(topic string, msg map[string]any)
 	return func(topic string, msg map[string]any) error {
 		switch topic {
 		case r.baseTopic + "/control/proplet/alive":
-			return r.mqttLivenessHandler(msg)
+			return r.mqttLivenessHandler(context.Background(), msg)
 		case r.baseTopic + "/control/proplet/results":
-			return r.mqttResultHandler(msg)
+			return r.mqttResultHandler(context.Background(), msg)
 		}
 
 		return nil
@@ -379,7 +437,7 @@ func (r *PropletReconciler) SetupWithManager(
 	r.livelinessInterval = livelinessInterval
 	r.lastSeenThreshold = lastSeenThreshold
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(baseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
 
 	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
 		return err

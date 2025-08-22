@@ -21,6 +21,7 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -72,11 +73,6 @@ func (in *K8sPropletSpec) DeepCopyInto(out *K8sPropletSpec) {
 		in, out := &in.Replicas, &out.Replicas
 		*out = new(int32)
 		**out = **in
-	}
-	if in.Resources != nil {
-		in, out := &in.Resources, &out.Resources
-		*out = new(metav1.LabelSelector)
-		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -247,10 +243,12 @@ func (in *PropletSpec) DeepCopyInto(out *PropletSpec) {
 		*out = new(K8sPropletSpec)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.Resources != nil {
-		in, out := &in.Resources, &out.Resources
-		*out = new(PropletResources)
-		(*in).DeepCopyInto(*out)
+	if in.Resource != nil {
+		in, out := &in.Resource, &out.Resource
+		*out = make(corev1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
 	}
 	in.ConnectionConfig.DeepCopyInto(&out.ConnectionConfig)
 }

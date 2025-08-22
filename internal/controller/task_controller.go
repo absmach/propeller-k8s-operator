@@ -295,7 +295,7 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 	r.domainID = domainID
 	r.channelID = channelID
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(baseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerv1.Task{}).
