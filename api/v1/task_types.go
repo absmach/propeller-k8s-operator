@@ -72,10 +72,10 @@ type TaskSpec struct {
 	File            []byte           `json:"file,omitempty"`
 	CLIArgs         []string         `json:"cliArgs,omitempty"`
 	Inputs          []string         `json:"inputs,omitempty"`
-	PropletSelector *PropletSelector `json:"propletSelector,omitzero"`
+	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	PreferredPropletType PropletKind       `json:"preferredPropletType,omitempty"`
-	ResourceRequirements *PropletResources `json:"resourceRequirements,omitzero"`
+	ResourceRequirements *PropletResources `json:"resourceRequirements,omitempty,omitzero"`
 }
 
 type TaskCondition struct {
@@ -93,10 +93,10 @@ type TaskStatus struct {
 
 	Phase           TaskPhase       `json:"phase"`
 	AssignedProplet string          `json:"assignedProplet,omitempty"`
-	CreatedAt       *metav1.Time    `json:"createdAt,omitzero"`
-	UpdatedAt       *metav1.Time    `json:"updatedAt,omitzero"`
-	StartedAt       *metav1.Time    `json:"startedAt,omitzero"`
-	FinishedAt      *metav1.Time    `json:"finishedAt,omitzero"`
+	CreatedAt       *metav1.Time    `json:"createdAt,omitempty,omitzero"`
+	UpdatedAt       *metav1.Time    `json:"updatedAt,omitempty,omitzero"`
+	StartedAt       *metav1.Time    `json:"startedAt,omitempty,omitzero"`
+	FinishedAt      *metav1.Time    `json:"finishedAt,omitempty,omitzero"`
 	Results         string          `json:"results,omitempty"`
 	Error           string          `json:"error,omitempty"`
 	Conditions      []TaskCondition `json:"conditions,omitzero"`

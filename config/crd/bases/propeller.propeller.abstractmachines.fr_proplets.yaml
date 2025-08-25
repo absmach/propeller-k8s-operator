@@ -74,7 +74,6 @@ spec:
                 - clientKey
                 - domainId
                 - mqttAddress
-                - mqttTimeout
                 type: object
               external:
                 properties:
@@ -115,7 +114,6 @@ spec:
                 type: string
             required:
             - connectionConfig
-            - resources
             - type
             type: object
           status:

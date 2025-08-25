@@ -109,8 +109,6 @@ spec:
             required:
             - functionName
             - name
-            - propletSelector
-            - resourceRequirements
             type: object
           status:
             description: status defines the observed state of Task
@@ -157,11 +155,7 @@ spec:
                 type: string
             required:
             - conditions
-            - createdAt
-            - finishedAt
             - phase
-            - startedAt
-            - updatedAt
             type: object
         required:
         - spec

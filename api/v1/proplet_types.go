@@ -57,7 +57,7 @@ type ConnectionConfig struct {
 	ClientID    string           `json:"clientId"`
 	ClientKey   string           `json:"clientKey"`
 	MQTTAddress string           `json:"mqttAddress"`
-	MQTTTimeout *metav1.Duration `json:"mqttTimeout,omitzero"`
+	MQTTTimeout *metav1.Duration `json:"mqttTimeout,omitempty,omitzero"`
 	MQTTQoS     uint8            `json:"mqttQos,omitempty"`
 }
 
@@ -72,7 +72,7 @@ type PropletSpec struct {
 	Type             PropletKind          `json:"type"`
 	External         *ExternalPropletSpec `json:"external,omitempty,omitzero"`
 	K8s              *K8sPropletSpec      `json:"k8s,omitempty,omitzero"`
-	Resource         corev1.ResourceList  `json:"resources,omitzero"`
+	Resource         corev1.ResourceList  `json:"resources,omitempty,omitzero"`
 	ConnectionConfig ConnectionConfig     `json:"connectionConfig"`
 }
 

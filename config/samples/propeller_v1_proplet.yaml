@@ -11,7 +11,7 @@ spec:
     clientId: ef007c37-3253-4860-9986-cc9262a8e0f1
     clientKey: b07514e4-05a6-40bc-acde-3030e757839c
     domainId: cbba98e5-84a9-422c-ad00-f6ee21d6695a
-    mqttAddress: tcp://0.tcp.in.ngrok.io:13092
+    mqttAddress: tcp://0.tcp.in.ngrok.io:10685
     mqttQos: 1
     mqttTimeout: 10s
   external:

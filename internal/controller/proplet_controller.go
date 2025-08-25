@@ -289,8 +289,6 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("External proplet status updated")
-
 	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
 }
 
@@ -406,7 +404,7 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 
 	task := tasks.Items[0]
 
-	task.Status.Error = fmt.Sprintf("%v", msg["results"])
+	task.Status.Results = fmt.Sprintf("%v", msg["results"])
 	task.Status.Phase = propellerv1.TaskCompletedPhase
 	task.Status.FinishedAt = &metav1.Time{Time: time.Now()}
 

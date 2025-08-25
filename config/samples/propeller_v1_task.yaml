@@ -6,7 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: addition
 spec:
-  name: main
+  name: addition
+  functionName: main
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   propletSelector:
     propletId:

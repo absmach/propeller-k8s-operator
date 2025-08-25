@@ -234,7 +234,7 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 	topic := r.baseTopic + "/control/manager/start"
 	payload := map[string]any{
 		"id":        string(task.UID),
-		"name":      task.Spec.Name,
+		"name":      task.Spec.FunctionName,
 		"state":     0,
 		"image_url": task.Spec.ImageURL,
 		"file":      task.Spec.File,
