@@ -100,7 +100,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 
 	deployment := &appsv1.Deployment{}
 	deploymentName := types.NamespacedName{
-		Name:      fmt.Sprintf("%s-proplet", proplet.Name),
+		Name:      proplet.Name,
 		Namespace: proplet.Namespace,
 	}
 

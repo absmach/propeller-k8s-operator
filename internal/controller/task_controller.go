@@ -265,6 +265,19 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 
 	logger.Info("Task execution started", "proplet", task.Status.AssignedProplet)
 
+	proplet := &propellerv1.Proplet{}
+	if err := r.Get(ctx, client.ObjectKey{Name: task.Status.AssignedProplet, Namespace: task.Namespace}, proplet); err != nil {
+		logger.Error(err, "Failed to find proplet")
+
+		return ctrl.Result{}, err
+	}
+
+	proplet.Status.Phase = propellerv1.PropletRunningPhase
+	proplet.Status.TaskCount = proplet.Status.TaskCount + 1
+	if err := r.Status().Update(ctx, proplet); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{RequeueAfter: time.Minute * 2}, nil
 }
 
