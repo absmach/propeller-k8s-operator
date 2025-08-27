@@ -96,7 +96,7 @@ func main() {
 		"The interval at which the liveliness probe is performed.")
 	flag.DurationVar(&lastSeenThreshold, "last-seen-threshold", 30*time.Second,
 		"The threshold for the last seen timestamp.")
-	flag.StringVar(&mqttAddress, "mqtt-address", "tcp://0.tcp.in.ngrok.io:10685", "The address of the MQTT broker.")
+	flag.StringVar(&mqttAddress, "mqtt-address", "tcp://0.tcp.in.ngrok.io:18260", "The address of the MQTT broker.")
 	flag.UintVar(&mqttQoS, "mqtt-qos", 0, "The QoS level of the MQTT messages.")
 	flag.DurationVar(&mqttTimeout, "mqtt-timeout", 30*time.Second, "The timeout for MQTT operations.")
 	flag.StringVar(&domainID, "domain-id", "cbba98e5-84a9-422c-ad00-f6ee21d6695a", "The domain ID.")

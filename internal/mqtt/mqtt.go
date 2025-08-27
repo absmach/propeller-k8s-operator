@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -26,8 +25,7 @@ var (
 
 	aliveTopicTemplate = "m/%s/c/%s/messages/control/proplet/alive"
 	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
-
-	mqttLogger = logf.Log.WithName("mqtt")
+	mqttLogger         = logf.Log.WithName("mqtt")
 )
 
 type pubsub struct {
@@ -145,20 +143,15 @@ func newClient(address, id, username, password, domainID, channelID string, time
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
-		args := []any{}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-		}
-
-		mqttLogger.Info("MQTT connection lost", args...)
+		mqttLogger.Error(err, "MQTT connection lost")
 	})
 
 	opts.SetReconnectingHandler(func(_ mqtt.Client, options *mqtt.ClientOptions) {
 		args := []any{}
 		if options != nil {
 			args = append(args,
-				slog.String("client_id", options.ClientID),
-				slog.String("username", options.Username),
+				"client_id", options.ClientID,
+				"username", options.Username,
 			)
 		}
 
@@ -183,13 +176,13 @@ func (ps *pubsub) mqttHandler(h Handler) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
 		var msg map[string]any
 		if err := json.Unmarshal(m.Payload(), &msg); err != nil {
-			mqttLogger.Error(err, "Failed to unmarshal received message")
+			mqttLogger.Error(err, "Failed to unmarshal received message", "topic", m.Topic(), "payload", string(m.Payload()))
 
 			return
 		}
 
 		if err := h(m.Topic(), msg); err != nil {
-			// mqttLogger.Error(err, "Failed to handle MQTT message")
+			mqttLogger.Error(err, "Failed to handle MQTT message", "topic", m.Topic(), "payload", msg)
 
 			return
 		}
