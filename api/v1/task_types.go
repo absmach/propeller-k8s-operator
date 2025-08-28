@@ -22,8 +22,11 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 type (
-	PropletKind       string
-	TaskPhase         string
+	// +kubebuilder:validation:Enum=k8s;external;any
+	PropletKind string
+	// +kubebuilder:validation:Enum=pending;scheduled;running;completed;failed
+	TaskPhase string
+	// +kubebuilder:validation:Enum=Scheduled;Started;Completed
 	TaskConditionType string
 )
 

@@ -22,7 +22,9 @@ import (
 )
 
 type (
-	PropletPhase         string
+	// +kubebuilder:validation:Enum=Initializing;Running;Offline
+	PropletPhase string
+	// +kubebuilder:validation:Enum=Ready;Connected;Healthy
 	PropletConditionType string
 )
 
@@ -93,7 +95,8 @@ type PropletSpec struct {
 	Type     PropletKind          `json:"type"`
 	External *ExternalPropletSpec `json:"external,omitempty,omitzero"`
 	K8s      *K8sPropletSpec      `json:"k8s,omitempty,omitzero"`
-	Resource corev1.ResourceList  `json:"resources,omitempty,omitzero"`
+	// +kubebuilder:validation:Optional
+	Resource corev1.ResourceList `json:"resources,omitempty,omitzero"`
 	// +kubebuilder:validation:Required
 	ConnectionConfig ConnectionConfig `json:"connectionConfig"`
 }
@@ -107,7 +110,9 @@ type PropletCondition struct {
 }
 
 type K8sStatus struct {
-	ReadyReplicas     int32 `json:"readyReplicas"`
+	// +kubebuilder:validation:Minimum=0
+	ReadyReplicas int32 `json:"readyReplicas"`
+	// +kubebuilder:validation:Minimum=0
 	AvailableReplicas int32 `json:"availableReplicas"`
 }
 

@@ -135,9 +135,14 @@ spec:
                 description: ResourceList is a set of (resource name, quantity) pairs.
                 type: object
               type:
-                enum:
-                - k8s
-                - external
+                allOf:
+                - enum:
+                  - k8s
+                  - external
+                  - any
+                - enum:
+                  - k8s
+                  - external
                 type: string
             required:
             - connectionConfig
@@ -175,6 +180,10 @@ spec:
                     status:
                       type: string
                     type:
+                      enum:
+                      - Ready
+                      - Connected
+                      - Healthy
                       type: string
                   required:
                   - lastTransitionTime
@@ -186,9 +195,11 @@ spec:
                 properties:
                   availableReplicas:
                     format: int32
+                    minimum: 0
                     type: integer
                   readyReplicas:
                     format: int32
+                    minimum: 0
                     type: integer
                 required:
                 - availableReplicas
@@ -199,6 +210,10 @@ spec:
                 type: string
               phase:
                 default: Initializing
+                enum:
+                - Initializing
+                - Running
+                - Offline
                 type: string
               taskCount:
                 default: 0
