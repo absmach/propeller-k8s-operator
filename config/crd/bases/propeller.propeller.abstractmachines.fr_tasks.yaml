@@ -18,6 +18,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .spec.functionName
+      name: Function
+      type: string
     - jsonPath: .status.assignedProplet
       name: Proplet
       type: string
@@ -25,8 +28,14 @@ spec:
       name: Start Time
       type: date
     - jsonPath: .status.finishedAt
-      name: Duration
+      name: Finish Time
+      type: date
+    - jsonPath: .spec.preferredPropletType
+      name: Preferred Type
       type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1
     schema:
       openAPIV3Schema:

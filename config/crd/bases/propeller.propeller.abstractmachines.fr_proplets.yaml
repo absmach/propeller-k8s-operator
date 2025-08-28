@@ -21,11 +21,20 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
     - jsonPath: .status.taskCount
       name: Tasks
       type: integer
+    - jsonPath: .status.k8sStatus.readyReplicas
+      name: Replicas
+      type: string
     - jsonPath: .status.lastSeen
       name: Last Seen
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
       type: date
     name: v1
     schema:

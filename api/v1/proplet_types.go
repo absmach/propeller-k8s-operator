@@ -131,8 +131,11 @@ type PropletStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Tasks",type=integer,JSONPath=`.status.taskCount`
+// +kubebuilder:printcolumn:name="Replicas",type=string,JSONPath=`.status.k8sStatus.readyReplicas`
 // +kubebuilder:printcolumn:name="Last Seen",type=date,JSONPath=`.status.lastSeen`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Proplet is the Schema for the proplets API
 type Proplet struct {

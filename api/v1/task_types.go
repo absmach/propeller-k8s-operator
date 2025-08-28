@@ -115,9 +115,12 @@ type TaskStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Function",type=string,JSONPath=`.spec.functionName`
 // +kubebuilder:printcolumn:name="Proplet",type=string,JSONPath=`.status.assignedProplet`
 // +kubebuilder:printcolumn:name="Start Time",type=date,JSONPath=`.status.startedAt`
-// +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.finishedAt`
+// +kubebuilder:printcolumn:name="Finish Time",type=date,JSONPath=`.status.finishedAt`
+// +kubebuilder:printcolumn:name="Preferred Type",type=string,JSONPath=`.spec.preferredPropletType`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Task is the Schema for the tasks API
 type Task struct {
