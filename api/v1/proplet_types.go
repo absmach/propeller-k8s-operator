@@ -46,19 +46,35 @@ type ExternalPropletSpec struct {
 }
 
 type K8sPropletSpec struct {
-	Image    string `json:"image"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+	// +kubebuilder:validation:Enum=debug;info;warn;error
 	LogLevel string `json:"logLevel,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
 	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type ConnectionConfig struct {
-	DomainID    string           `json:"domainId"`
-	ChannelID   string           `json:"channelId"`
-	ClientID    string           `json:"clientId"`
-	ClientKey   string           `json:"clientKey"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	DomainID string `json:"domainId"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	ChannelID string `json:"channelId"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	ClientID string `json:"clientId"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	ClientKey string `json:"clientKey"`
+	// +kubebuilder:validation:Required
 	MQTTAddress string           `json:"mqttAddress"`
 	MQTTTimeout *metav1.Duration `json:"mqttTimeout,omitempty,omitzero"`
-	MQTTQoS     uint8            `json:"mqttQos,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=2
+	MQTTQoS uint8 `json:"mqttQos,omitempty"`
 }
 
 // PropletSpec defines the desired state of Proplet
@@ -68,12 +84,14 @@ type PropletSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=k8s;external
-	Type             PropletKind          `json:"type"`
-	External         *ExternalPropletSpec `json:"external,omitempty,omitzero"`
-	K8s              *K8sPropletSpec      `json:"k8s,omitempty,omitzero"`
-	Resource         corev1.ResourceList  `json:"resources,omitempty,omitzero"`
-	ConnectionConfig ConnectionConfig     `json:"connectionConfig"`
+	Type     PropletKind          `json:"type"`
+	External *ExternalPropletSpec `json:"external,omitempty,omitzero"`
+	K8s      *K8sPropletSpec      `json:"k8s,omitempty,omitzero"`
+	Resource corev1.ResourceList  `json:"resources,omitempty,omitzero"`
+	// +kubebuilder:validation:Required
+	ConnectionConfig ConnectionConfig `json:"connectionConfig"`
 }
 
 type PropletCondition struct {

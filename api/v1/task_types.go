@@ -33,7 +33,7 @@ const (
 	AnyProplet      PropletKind = "any"
 
 	TaskPendingPhase   TaskPhase = "pending"
-	TashScheduledPhase TaskPhase = "scheduled"
+	TaskScheduledPhase TaskPhase = "scheduled"
 	TaskRunningPhase   TaskPhase = "running"
 	TaskCompletedPhase TaskPhase = "completed"
 	TaskFailedPhase    TaskPhase = "failed"
@@ -52,8 +52,10 @@ type PropletSelector struct {
 
 type PropletResources struct {
 	// CPU capacity (e.g., "1000m" for 1 CPU core)
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]*)?(m|))|([0-9]+m?)$`
 	CPU string `json:"cpu,omitempty"`
 	// Memory capacity (e.g., "1Gi")
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]*)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$`
 	Memory string `json:"memory,omitempty"`
 	// Custom resource constraints
 	Custom map[string]string `json:"custom,omitempty"`
@@ -66,7 +68,12 @@ type TaskSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	Name            string           `json:"name"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	FunctionName    string           `json:"functionName"`
 	ImageURL        string           `json:"imageUrl,omitempty"`
 	File            []byte           `json:"file,omitempty"`
