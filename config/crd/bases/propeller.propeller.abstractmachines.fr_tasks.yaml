@@ -73,6 +73,7 @@ spec:
                 minLength: 1
                 type: string
               preferredPropletType:
+                default: any
                 enum:
                 - k8s
                 - external
@@ -149,6 +150,7 @@ spec:
                 format: date-time
                 type: string
               phase:
+                default: pending
                 type: string
               results:
                 type: string

@@ -69,10 +69,12 @@ spec:
                   mqttAddress:
                     type: string
                   mqttQos:
+                    default: 0
                     maximum: 2
                     minimum: 0
                     type: integer
                   mqttTimeout:
+                    default: 30s
                     type: string
                 required:
                 - channelId
@@ -98,6 +100,7 @@ spec:
                     minLength: 1
                     type: string
                   logLevel:
+                    default: info
                     enum:
                     - debug
                     - info
@@ -105,6 +108,7 @@ spec:
                     - error
                     type: string
                   replicas:
+                    default: 1
                     format: int32
                     maximum: 100
                     minimum: 0
@@ -185,8 +189,10 @@ spec:
                 format: date-time
                 type: string
               phase:
+                default: Initializing
                 type: string
               taskCount:
+                default: 0
                 format: int64
                 type: integer
             required:

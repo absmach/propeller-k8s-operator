@@ -50,9 +50,11 @@ type K8sPropletSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Image string `json:"image"`
 	// +kubebuilder:validation:Enum=debug;info;warn;error
+	// +kubebuilder:default="info"
 	LogLevel string `json:"logLevel,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
 }
 
@@ -70,10 +72,12 @@ type ConnectionConfig struct {
 	// +kubebuilder:validation:MinLength=1
 	ClientKey string `json:"clientKey"`
 	// +kubebuilder:validation:Required
-	MQTTAddress string           `json:"mqttAddress"`
+	MQTTAddress string `json:"mqttAddress"`
+	// +kubebuilder:default="30s"
 	MQTTTimeout *metav1.Duration `json:"mqttTimeout,omitempty,omitzero"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=2
+	// +kubebuilder:default=0
 	MQTTQoS uint8 `json:"mqttQos,omitempty"`
 }
 
@@ -112,12 +116,14 @@ type PropletStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Phase              PropletPhase       `json:"phase"`
-	Conditions         []PropletCondition `json:"conditions,omitempty"`
-	LastSeen           *metav1.Time       `json:"lastSeen,omitempty"`
-	TaskCount          uint64             `json:"taskCount"`
-	AvailableResources *PropletResources  `json:"availableResources,omitempty"`
-	K8sStatus          *K8sStatus         `json:"k8sStatus,omitempty"`
+	// +kubebuilder:default="Initializing"
+	Phase      PropletPhase       `json:"phase"`
+	Conditions []PropletCondition `json:"conditions,omitempty"`
+	LastSeen   *metav1.Time       `json:"lastSeen,omitempty"`
+	// +kubebuilder:default=0
+	TaskCount          uint64            `json:"taskCount"`
+	AvailableResources *PropletResources `json:"availableResources,omitempty"`
+	K8sStatus          *K8sStatus        `json:"k8sStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true

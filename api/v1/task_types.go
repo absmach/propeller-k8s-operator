@@ -81,6 +81,7 @@ type TaskSpec struct {
 	Inputs          []string         `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
+	// +kubebuilder:default="any"
 	PreferredPropletType PropletKind       `json:"preferredPropletType,omitempty"`
 	ResourceRequirements *PropletResources `json:"resourceRequirements,omitempty,omitzero"`
 }
@@ -98,6 +99,7 @@ type TaskStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// +kubebuilder:default="pending"
 	Phase           TaskPhase       `json:"phase"`
 	AssignedProplet string          `json:"assignedProplet,omitempty"`
 	CreatedAt       *metav1.Time    `json:"createdAt,omitempty,omitzero"`
