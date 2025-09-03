@@ -34,7 +34,7 @@ func (r *roundRobin) SelectProplet(t propellerv1.Task, proplets []propellerv1.Pr
 	r.LastProplet = (r.LastProplet + 1) % len(proplets)
 
 	p := proplets[r.LastProplet]
-	if !(p.Status.Phase == propellerv1.PropletRunningPhase) {
+	if p.Status.Phase != propellerv1.PropletRunningPhase {
 		return r.SelectProplet(t, proplets)
 	}
 	p.Status.TaskCount += 1
