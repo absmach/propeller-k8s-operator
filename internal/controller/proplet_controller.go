@@ -101,7 +101,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 
 	deployment := &appsv1.Deployment{}
 	deploymentName := types.NamespacedName{
-		Name:      proplet.Name,
+		Name:      fmt.Sprintf("%s-proplet", proplet.Name),
 		Namespace: proplet.Namespace,
 	}
 
@@ -132,7 +132,7 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
 }
 
 func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet) *appsv1.Deployment {
