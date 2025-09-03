@@ -51,7 +51,10 @@ var _ = Describe("Task Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: propellerv1.TaskSpec{
+						Name:         "test-task",
+						FunctionName: "test-function",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

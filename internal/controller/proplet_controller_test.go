@@ -51,7 +51,19 @@ var _ = Describe("Proplet Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: propellerv1.PropletSpec{
+						Type: propellerv1.PropletKind("k8s"),
+						K8s: &propellerv1.K8sPropletSpec{
+							Image: "test-image",
+						},
+						ConnectionConfig: propellerv1.ConnectionConfig{
+							ClientID:    "test-client",
+							ClientKey:   "test-key",
+							DomainID:    "test-domain",
+							ChannelID:   "test-channel",
+							MQTTAddress: "tcp://localhost:1883",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
