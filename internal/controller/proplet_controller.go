@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
@@ -38,6 +39,8 @@ import (
 )
 
 var superMQBaseTopic = "m/%s/c/%s/messages"
+
+const PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
 
 // PropletReconciler reconciles a Proplet object
 type PropletReconciler struct {
@@ -79,17 +82,89 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	if proplet.DeletionTimestamp != nil {
+		return r.handlePropletDeletion(ctx, &proplet)
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(&proplet, PropletFinalizerName) {
+		controllerutil.AddFinalizer(&proplet, PropletFinalizerName)
+		if err := r.Update(ctx, &proplet); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	var result ctrl.Result
+	var err error
+
 	switch proplet.Spec.Type {
 	case propellerv1.K8sProplet:
-		return r.reconcileK8sProplet(ctx, &proplet)
+		result, err = r.reconcileK8sProplet(ctx, &proplet)
 	case propellerv1.ExternalProplet:
-		return r.reconcileExternalProplet(ctx, &proplet)
+		result, err = r.reconcileExternalProplet(ctx, &proplet)
 	default:
-		err := fmt.Errorf("unknown proplet type: %s", proplet.Spec.Type)
+		err = fmt.Errorf("unknown proplet type: %s", proplet.Spec.Type)
 		logger.Error(err, "unknown proplet type")
 
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Minute * 5}, err
 	}
+
+	if err != nil {
+		logger.Error(err, "Reconciliation failed")
+		// On error, retry with exponential backoff, capped at 10 minutes
+		if result.RequeueAfter == 0 {
+			result.RequeueAfter = time.Minute
+		}
+		if result.RequeueAfter > time.Minute*10 {
+			result.RequeueAfter = time.Minute * 10
+		}
+	}
+
+	return result, err
+}
+
+func (r *PropletReconciler) handlePropletDeletion(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {
+	logger := logf.FromContext(ctx).WithValues("proplet", proplet.Name, "type", proplet.Spec.Type)
+	logger.Info("Handling proplet deletion")
+
+	if proplet.Spec.Type == propellerv1.K8sProplet {
+		deploymentName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s-proplet", proplet.Name),
+			Namespace: proplet.Namespace,
+		}
+
+		deployment := &appsv1.Deployment{}
+		err := r.Get(ctx, deploymentName, deployment)
+		if err == nil {
+			logger.Info("Deleting associated deployment")
+
+			if err := r.Delete(ctx, deployment); err != nil {
+				logger.Error(err, "Failed to delete deployment")
+
+				return ctrl.Result{}, err
+			}
+		} else if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to get deployment for deletion")
+
+			return ctrl.Result{}, err
+		}
+	}
+
+	if controllerutil.ContainsFinalizer(proplet, PropletFinalizerName) {
+		controllerutil.RemoveFinalizer(proplet, PropletFinalizerName)
+		if err := r.Update(ctx, proplet); err != nil {
+			logger.Error(err, "Failed to remove finalizer")
+
+			return ctrl.Result{}, err
+		}
+	}
+
+	logger.Info("Proplet deletion completed")
+
+	return ctrl.Result{}, nil
 }
 
 func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {
@@ -124,15 +199,42 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		logger.Error(err, "Failed to get deployment")
 
 		return ctrl.Result{}, err
+	} else {
+		// Check if deployment needs to be updated
+		desiredDeployment := r.buildPropletDeployment(proplet)
+		if err := controllerutil.SetControllerReference(proplet, desiredDeployment, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if r.deploymentNeedsUpdate(deployment, desiredDeployment) {
+			logger.Info("Updating proplet deployment")
+
+			// Update important fields
+			deployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+			deployment.Spec.Template = desiredDeployment.Spec.Template
+			deployment.Labels = desiredDeployment.Labels
+
+			if err := r.Update(ctx, deployment); err != nil {
+				logger.Error(err, "Failed to update deployment")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	if err := r.updateK8sPropletStatus(ctx, proplet, deployment); err != nil {
 		logger.Error(err, "Failed to update proplet status")
-
-		return ctrl.Result{}, err
+		// Don't fail the reconciliation if status update fails, but retry sooner
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
+	// Determine requeue interval based on deployment status
+	requeueInterval := r.livelinessInterval
+	if deployment.Status.ReadyReplicas == 0 {
+		// If no replicas are ready, check more frequently
+		requeueInterval = time.Minute
+	}
+
+	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
 func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet) *appsv1.Deployment {
@@ -141,7 +243,7 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 		replicas = *proplet.Spec.K8s.Replicas
 	}
 
-	return &appsv1.Deployment{
+	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-proplet", proplet.Name),
 			Namespace: proplet.Namespace,
@@ -230,6 +332,34 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 			},
 		},
 	}
+
+	return deployment
+}
+
+func (r *PropletReconciler) deploymentNeedsUpdate(current, desired *appsv1.Deployment) bool {
+	if *current.Spec.Replicas != *desired.Spec.Replicas {
+		return true
+	}
+
+	if len(current.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
+		if current.Spec.Template.Spec.Containers[0].Image != desired.Spec.Template.Spec.Containers[0].Image {
+			return true
+		}
+
+		if !reflect.DeepEqual(current.Spec.Template.Spec.Containers[0].Env, desired.Spec.Template.Spec.Containers[0].Env) {
+			return true
+		}
+
+		if !reflect.DeepEqual(current.Spec.Template.Spec.Containers[0].Resources, desired.Spec.Template.Spec.Containers[0].Resources) {
+			return true
+		}
+	}
+
+	if !reflect.DeepEqual(current.Labels, desired.Labels) {
+		return true
+	}
+
+	return false
 }
 
 func (r *PropletReconciler) updateK8sPropletStatus(ctx context.Context, proplet *propellerv1.Proplet, deployment *appsv1.Deployment) error {
@@ -238,22 +368,62 @@ func (r *PropletReconciler) updateK8sPropletStatus(ctx context.Context, proplet 
 		AvailableReplicas: deployment.Status.AvailableReplicas,
 	}
 
+	now := metav1.Now()
+	conditions := []propellerv1.PropletCondition{}
+
+	// Determine phase and conditions based on deployment status
 	if deployment.Status.ReadyReplicas > 0 {
 		proplet.Status.Phase = propellerv1.PropletRunningPhase
-	} else {
-		proplet.Status.Phase = propellerv1.PropletInitializingPhase
-	}
-
-	now := metav1.Now()
-	proplet.Status.Conditions = []propellerv1.PropletCondition{
-		{
+		conditions = append(conditions, propellerv1.PropletCondition{
 			Type:               propellerv1.PropletConditionReady,
 			Status:             metav1.ConditionTrue,
 			LastTransitionTime: now,
 			Reason:             "DeploymentReady",
-			Message:            fmt.Sprintf("Deployment has %d ready replicas", deployment.Status.ReadyReplicas),
-		},
+			Message:            fmt.Sprintf("Deployment has %d ready replicas out of %d", deployment.Status.ReadyReplicas, deployment.Status.Replicas),
+		})
+	} else if deployment.Status.Replicas > 0 {
+		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+		conditions = append(conditions, propellerv1.PropletCondition{
+			Type:               propellerv1.PropletConditionReady,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: now,
+			Reason:             "DeploymentNotReady",
+			Message:            fmt.Sprintf("Deployment has %d ready replicas out of %d", deployment.Status.ReadyReplicas, deployment.Status.Replicas),
+		})
+	} else {
+		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+		conditions = append(conditions, propellerv1.PropletCondition{
+			Type:               propellerv1.PropletConditionReady,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: now,
+			Reason:             "DeploymentNoReplicas",
+			Message:            "Deployment has no replicas",
+		})
 	}
+
+	// Check deployment conditions for more detailed status
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+			conditions = append(conditions, propellerv1.PropletCondition{
+				Type:               propellerv1.PropletConditionHealthy,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "DeploymentAvailable",
+				Message:            "Deployment is available",
+			})
+		}
+		if cond.Type == appsv1.DeploymentProgressing && cond.Status == corev1.ConditionFalse {
+			conditions = append(conditions, propellerv1.PropletCondition{
+				Type:               propellerv1.PropletConditionHealthy,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: now,
+				Reason:             "DeploymentNotProgressing",
+				Message:            fmt.Sprintf("Deployment is not progressing: %s", cond.Message),
+			})
+		}
+	}
+
+	proplet.Status.Conditions = conditions
 	proplet.Status.LastSeen = &now
 
 	if len(deployment.Spec.Template.Spec.Containers) > 0 {
@@ -263,7 +433,7 @@ func (r *PropletReconciler) updateK8sPropletStatus(ctx context.Context, proplet 
 		}
 	}
 
-	return r.Status().Update(ctx, proplet)
+	return r.updatePropletStatus(ctx, proplet)
 }
 
 func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {
@@ -273,24 +443,95 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		return ctrl.Result{}, fmt.Errorf("external spec is required for external proplet type")
 	}
 
+	now := metav1.Now()
+	conditions := []propellerv1.PropletCondition{}
+
 	if proplet.Status.LastSeen != nil {
 		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
 		if timeSinceLastSeen > r.lastSeenThreshold {
 			proplet.Status.Phase = propellerv1.PropletOfflinePhase
+			conditions = append(conditions, propellerv1.PropletCondition{
+				Type:               propellerv1.PropletConditionConnected,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: now,
+				Reason:             "PropletOffline",
+				Message:            fmt.Sprintf("Proplet offline for %s (threshold: %s)", timeSinceLastSeen.String(), r.lastSeenThreshold.String()),
+			})
 		} else {
 			proplet.Status.Phase = propellerv1.PropletRunningPhase
+			conditions = append(conditions, propellerv1.PropletCondition{
+				Type:               propellerv1.PropletConditionConnected,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "PropletOnline",
+				Message:            fmt.Sprintf("Proplet last seen %s ago", timeSinceLastSeen.String()),
+			})
+			conditions = append(conditions, propellerv1.PropletCondition{
+				Type:               propellerv1.PropletConditionReady,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "PropletReady",
+				Message:            "External proplet is ready and connected",
+			})
 		}
 	} else {
 		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+		conditions = append(conditions, propellerv1.PropletCondition{
+			Type:               propellerv1.PropletConditionReady,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: now,
+			Reason:             "PropletInitializing",
+			Message:            "Waiting for first connection from external proplet",
+		})
 	}
 
-	if err := r.Status().Update(ctx, proplet); err != nil {
+	proplet.Status.Conditions = conditions
+
+	if err := r.updatePropletStatus(ctx, proplet); err != nil {
 		logger.Error(err, "Failed to update external proplet status")
-
-		return ctrl.Result{}, err
+		// Don't fail the reconciliation if status update fails, but retry sooner
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	return ctrl.Result{RequeueAfter: r.livelinessInterval}, nil
+	// Determine requeue interval based on proplet status
+	requeueInterval := r.livelinessInterval
+	if proplet.Status.Phase == propellerv1.PropletOfflinePhase {
+		// If proplet is offline, check more frequently
+		requeueInterval = time.Minute
+	}
+
+	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+}
+
+func (r *PropletReconciler) updatePropletStatus(ctx context.Context, proplet *propellerv1.Proplet) error {
+	logger := logf.FromContext(ctx).WithValues("proplet", proplet.Name)
+
+	// Retry status update with exponential backoff
+	const maxRetries = 3
+	for i := 0; i < maxRetries; i++ {
+		if err := r.Status().Update(ctx, proplet); err != nil {
+			if apierrors.IsConflict(err) && i < maxRetries-1 {
+				logger.Info("Status update conflict, retrying", "attempt", i+1)
+				// Get fresh version of the proplet
+				fresh := &propellerv1.Proplet{}
+				if getErr := r.Get(ctx, types.NamespacedName{
+					Name:      proplet.Name,
+					Namespace: proplet.Namespace,
+				}, fresh); getErr != nil {
+					return getErr
+				}
+				// Copy status to fresh object
+				fresh.Status = proplet.Status
+				*proplet = *fresh
+				// Wait a bit before retrying
+				time.Sleep(time.Millisecond * 100 * time.Duration(i+1))
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("failed to update status after %d retries", maxRetries)
 }
 
 func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[string]any) error {
@@ -301,17 +542,11 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	if propletId == "" {
 		return errors.New("proplet id is empty")
 	}
-	namespace, ok := msg["namespace"].(string)
-	if !ok {
-		return errors.New("invalid namespace")
-	}
-	if namespace == "" {
-		return errors.New("namespace is empty")
-	}
 	logger := logf.FromContext(ctx).WithValues("proplet_id", propletId)
 
+	// Search across all namespaces since namespace is not provided in MQTT message
 	var proplets propellerv1.PropletList
-	if err := r.List(ctx, &proplets, client.InNamespace(namespace)); err != nil {
+	if err := r.List(ctx, &proplets); err != nil {
 		return err
 	}
 
@@ -380,7 +615,7 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 
 	proplet.Status.LastSeen = &now
 
-	if err := r.Status().Update(ctx, proplet); err != nil {
+	if err := r.updatePropletStatus(ctx, proplet); err != nil {
 		logger.Error(err, "Failed to update external proplet status")
 
 		return err
@@ -398,18 +633,33 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 		return errors.New("task id is empty")
 	}
 
+	logger := logf.FromContext(ctx).WithValues("task_id", taskID)
+
+	// Search across all namespaces to find the task
 	var tasks propellerv1.TaskList
-	if err := r.List(ctx, &tasks, client.InNamespace("default")); err != nil {
+	if err := r.List(ctx, &tasks); err != nil {
 		return err
 	}
 
-	task := tasks.Items[0]
+	// Find the task with matching ID
+	var task *propellerv1.Task
+	for i := range tasks.Items {
+		if tasks.Items[i].Name == taskID || tasks.Items[i].UID == types.UID(taskID) {
+			task = &tasks.Items[i]
+			break
+		}
+	}
+
+	if task == nil {
+		logger.Info("Task resource not found, ignoring")
+		return nil
+	}
 
 	task.Status.Results = fmt.Sprintf("%v", msg["results"])
 	task.Status.Phase = propellerv1.TaskCompletedPhase
 	task.Status.FinishedAt = &metav1.Time{Time: time.Now()}
 
-	if err := r.Status().Update(ctx, &task); err != nil {
+	if err := r.Status().Update(ctx, task); err != nil {
 		return err
 	}
 
