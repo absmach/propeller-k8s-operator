@@ -75,7 +75,8 @@ spec:
                 type: string
               inputs:
                 items:
-                  type: string
+                  format: int64
+                  type: integer
                 type: array
               name:
                 maxLength: 253

@@ -9,6 +9,9 @@ spec:
   name: addition
   functionName: main
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
+  inputs:
+    - 10
+    - 32
   propletSelector:
     propletId:
   resourceRequirements:

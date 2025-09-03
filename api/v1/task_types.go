@@ -81,7 +81,7 @@ type TaskSpec struct {
 	ImageURL        string           `json:"imageUrl,omitempty"`
 	File            []byte           `json:"file,omitempty"`
 	CLIArgs         []string         `json:"cliArgs,omitempty"`
-	Inputs          []string         `json:"inputs,omitempty"`
+	Inputs          []uint64         `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	// +kubebuilder:default="any"

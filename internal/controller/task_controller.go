@@ -238,7 +238,7 @@ func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task
 		"state":     0,
 		"image_url": task.Spec.ImageURL,
 		"file":      task.Spec.File,
-		"inputs":    []uint64{10, 20},
+		"inputs":    task.Spec.Inputs,
 		"cli_args":  task.Spec.CLIArgs,
 	}
 
