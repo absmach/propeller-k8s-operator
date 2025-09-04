@@ -96,13 +96,13 @@ func main() {
 		"The interval at which the liveliness probe is performed.")
 	flag.DurationVar(&lastSeenThreshold, "last-seen-threshold", 30*time.Second,
 		"The threshold for the last seen timestamp.")
-	flag.StringVar(&mqttAddress, "mqtt-address", "tcp://0.tcp.eu.ngrok.io:13136", "The address of the MQTT broker.")
+	flag.StringVar(&mqttAddress, "mqtt-address", "", "The address of the MQTT broker.")
 	flag.UintVar(&mqttQoS, "mqtt-qos", 0, "The QoS level of the MQTT messages.")
 	flag.DurationVar(&mqttTimeout, "mqtt-timeout", 30*time.Second, "The timeout for MQTT operations.")
-	flag.StringVar(&domainID, "domain-id", "cbba98e5-84a9-422c-ad00-f6ee21d6695a", "The domain ID.")
-	flag.StringVar(&channelID, "channel-id", "16722ec1-ce8a-446d-a829-d83459f1c40e", "The channel ID.")
-	flag.StringVar(&clientID, "client-id", "2c898412-6f31-4c0a-b4b0-11ef32142e5c", "The client ID.")
-	flag.StringVar(&clientKey, "client-key", "e1c6baab-b9ba-4a1b-a62b-5f1e10b5acf8", "The client key.")
+	flag.StringVar(&domainID, "domain-id", "", "The domain ID.")
+	flag.StringVar(&channelID, "channel-id", "", "The channel ID.")
+	flag.StringVar(&clientID, "client-id", "", "The client ID.")
+	flag.StringVar(&clientKey, "client-key", "", "The client key.")
 	opts := zap.Options{
 		Development: true,
 	}
