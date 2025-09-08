@@ -63,7 +63,7 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-          - --mqtt-address=tcp://0.tcp.in.ngrok.io:16086
+          - --mqtt-address=tcp://0.tcp.in.ngrok.io:16621
           - --mqtt-qos=0
           - --mqtt-timeout=10s
           - --domain-id=cbba98e5-84a9-422c-ad00-f6ee21d6695a

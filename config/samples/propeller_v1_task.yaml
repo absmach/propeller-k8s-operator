@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: addition
+  name: addition-base64-encoded
 spec:
-  name: addition
+  name: addition-base64-encoded
   functionName: main
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   inputs:
