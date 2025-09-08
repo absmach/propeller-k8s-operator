@@ -20,6 +20,6 @@ spec:
     logLevel: info
     replicas: 1
   resources:
-    cpu: 100m
-    memory: 100Mi
+    cpu: 50m
+    memory: 128Mi
   type: k8s
