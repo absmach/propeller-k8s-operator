@@ -1,0 +1,18 @@
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Task
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: addition-base64-encoded
+spec:
+  name: addition-base64-encoded
+  functionName: main
+  file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
+  inputs:
+    - 10
+    - 32
+  propletSelector:
+    propletId:
+  resourceRequirements:
+    cpu:

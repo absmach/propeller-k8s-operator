@@ -1,0 +1,47 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - propeller.propeller.abstractmachines.fr
+  resources:
+  - proplets
+  - tasks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - propeller.propeller.abstractmachines.fr
+  resources:
+  - proplets/finalizers
+  - tasks/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - propeller.propeller.abstractmachines.fr
+  resources:
+  - proplets/status
+  - tasks/status
+  verbs:
+  - get
+  - patch
+  - update
