@@ -18,30 +18,34 @@ package controller
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"slices"
 	"time"
 
-	propellerv1 "github.com/absmach/propeller/api/v1"
+	propellerapiv1 "github.com/absmach/propeller/api/v1"
 	"github.com/absmach/propeller/internal/mqtt"
-	"github.com/absmach/propeller/internal/scheduler"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// TaskReconciler reconciles a Task object
+const (
+	defaultPropletID = "default"
+)
+
 type TaskReconciler struct {
 	client.Client
+
 	Scheme    *runtime.Scheme
-	scheduler scheduler.Scheduler
+	pubsub    mqtt.PubSub
 	domainID  string
 	channelID string
-	pubsub    mqtt.PubSub
 	baseTopic string
 }
 
@@ -58,260 +62,419 @@ type TaskReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
+
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := logf.FromContext(ctx).WithValues("task", req.NamespacedName)
+	logger := log.FromContext(ctx)
 
-	var task propellerv1.Task
-	if err := r.Get(ctx, req.NamespacedName, &task); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("Task not found, ignoring")
+	task := &propellerapiv1.Task{}
+	if err := r.Get(ctx, req.NamespacedName, task); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-			return ctrl.Result{}, nil
+	if task.Status.Phase == "" {
+		task.Status.Phase = propellerapiv1.TaskPendingPhase
+		if task.Status.Conditions == nil {
+			task.Status.Conditions = []propellerapiv1.TaskCondition{}
 		}
-
-		logger.Error(err, "unable to fetch Task")
-
-		return ctrl.Result{}, err
-	}
-
-	switch task.Status.Phase {
-	case "": // New task
-		return r.scheduleTask(ctx, &task)
-	case propellerv1.TaskPendingPhase:
-		return r.executeTask(ctx, &task)
-	case propellerv1.TaskRunningPhase:
-		return r.monitorTask(ctx, &task)
-	case propellerv1.TaskCompletedPhase, propellerv1.TaskFailedPhase:
-		return ctrl.Result{}, nil
-	default:
-		logger.Error(errors.New("unknown task phase"), "unknown task phase", "phase", task.Status.Phase)
-
-		return ctrl.Result{}, nil
-	}
-}
-
-func (r *TaskReconciler) scheduleTask(ctx context.Context, task *propellerv1.Task) (ctrl.Result, error) {
-	logger := logf.FromContext(ctx).WithValues("task", task.Name, "action", "schedule")
-
-	proplets, err := r.findSuitableProplets(ctx, task)
-	if err != nil {
-		logger.Error(err, "Failed to find suitable proplets")
-
-		return ctrl.Result{}, err
-	}
-
-	if len(proplets) == 0 {
-		logger.Info("No suitable proplets found, waiting")
-		task.Status.Phase = propellerv1.TaskPendingPhase
-
-		task.Status.Conditions = append(task.Status.Conditions, propellerv1.TaskCondition{
-			Type:               propellerv1.ScheduledType,
-			Status:             metav1.ConditionFalse,
-			LastTransitionTime: metav1.Now(),
-			Reason:             "NoSuitableProplets",
-			Message:            "No proplets available that match the task requirements",
-		})
-
 		if err := r.Status().Update(ctx, task); err != nil {
 			return ctrl.Result{}, err
 		}
-
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	selectedProplet, err := r.scheduler.SelectProplet(*task, proplets)
+	var (
+		result ctrl.Result
+		err    error
+	)
+
+	switch task.Status.Phase {
+	case propellerapiv1.TaskPendingPhase:
+		result, err = r.handlePending(ctx, task)
+	case propellerapiv1.TaskScheduledPhase, propellerapiv1.TaskRunningPhase:
+		result, err = r.handleRunning(ctx, task)
+	case propellerapiv1.TaskCompletedPhase, propellerapiv1.TaskFailedPhase:
+		return ctrl.Result{}, nil
+	default:
+		logger.Info("unknown phase", "phase", task.Status.Phase)
+
+		return ctrl.Result{}, nil
+	}
+
+	return result, err
+}
+
+func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub) error {
+	r.pubsub = pubsub
+	r.domainID = domainID
+	r.channelID = channelID
+	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&propellerapiv1.Task{}).
+		Owns(&batchv1.Job{}).
+		Complete(r)
+}
+
+func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	propletID := r.resolvePropletID(task)
+	if propletID == "" {
+		propletID = defaultPropletID
+		logger.Info("no proplet specified, using default", "proplet", propletID)
+	}
+
+	// Decide backend based on proplet type.
+	backend, err := r.determineBackend(ctx, task.Namespace, propletID)
 	if err != nil {
-		logger.Error(err, "Failed to select proplet")
+		return ctrl.Result{}, err
+	}
+
+	switch backend {
+	case propellerapiv1.K8sProplet:
+		return r.startK8sJob(ctx, task, propletID)
+	case propellerapiv1.ExternalProplet:
+		return r.startExternalTask(ctx, task, propletID)
+	default:
+		logger.Info("unknown proplet backend type, defaulting to external", "proplet", propletID)
+
+		return r.startExternalTask(ctx, task, propletID)
+	}
+}
+
+func (r *TaskReconciler) handleRunning(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
+	jobName := task.Name + "-job"
+	job := &batchv1.Job{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Name:      jobName,
+		Namespace: task.Namespace,
+	}, job); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if job.Status.Succeeded > 0 {
+		return r.handleJobSucceeded(ctx, task, job)
+	}
+
+	if job.Status.Failed > 0 {
+		return r.handleJobFailed(ctx, task, job)
+	}
+
+	return ctrl.Result{RequeueAfter: time.Second * 10}, nil
+}
+
+func (r *TaskReconciler) determineBackend(ctx context.Context, namespace, propletID string) (propellerapiv1.PropletKind, error) {
+	if propletID == "" {
+		return propellerapiv1.ExternalProplet, nil
+	}
+
+	proplet := &propellerapiv1.Proplet{}
+	if err := r.Get(ctx, client.ObjectKey{Name: propletID, Namespace: namespace}, proplet); err != nil {
+		// If we can't fetch, fall back to external so we don't assume cluster execution.
+		return propellerapiv1.ExternalProplet, client.IgnoreNotFound(err)
+	}
+
+	return proplet.Spec.Type, nil
+}
+
+func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	configMapName := task.Name + "-config"
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: task.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: task.APIVersion,
+					Kind:       task.Kind,
+					Name:       task.Name,
+					UID:        task.UID,
+					Controller: func() *bool {
+						b := true
+
+						return &b
+					}(),
+				},
+			},
+		},
+		Data: task.Spec.Env,
+	}
+
+	if len(task.Spec.File) > 0 {
+		if configMap.Data == nil {
+			configMap.Data = map[string]string{}
+		}
+		configMap.Data["wasm_file_provided"] = "true"
+	}
+
+	if err := r.Create(ctx, configMap); err != nil {
+		if client.IgnoreAlreadyExists(err) != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	jobName := task.Name + "-job"
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: task.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: task.APIVersion,
+					Kind:       task.Kind,
+					Name:       task.Name,
+					UID:        task.UID,
+					Controller: func() *bool {
+						b := true
+
+						return &b
+					}(),
+				},
+			},
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: func() corev1.RestartPolicy {
+						if task.Spec.RestartPolicy != "" {
+							return task.Spec.RestartPolicy
+						}
+						if task.Spec.Daemon {
+							return corev1.RestartPolicyAlways
+						}
+
+						return corev1.RestartPolicyOnFailure
+					}(),
+					Containers: []corev1.Container{
+						{
+							Name:  "task",
+							Image: task.Spec.ImageURL,
+							Args:  task.Spec.CLIArgs,
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: configMapName,
+										},
+									},
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "PROPLET_ID",
+									Value: propletID,
+								},
+								{
+									Name:  "TASK_ID",
+									Value: task.Name,
+								},
+							},
+							Resources: func() corev1.ResourceRequirements {
+								if task.Spec.ResourceRequirements != nil {
+									req := corev1.ResourceRequirements{}
+									if task.Spec.ResourceRequirements.CPU != "" {
+										req.Requests = corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse(task.Spec.ResourceRequirements.CPU),
+										}
+										req.Limits = corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse(task.Spec.ResourceRequirements.CPU),
+										}
+									}
+									if task.Spec.ResourceRequirements.Memory != "" {
+										if req.Requests == nil {
+											req.Requests = corev1.ResourceList{}
+										}
+										if req.Limits == nil {
+											req.Limits = corev1.ResourceList{}
+										}
+										req.Requests[corev1.ResourceMemory] = resource.MustParse(task.Spec.ResourceRequirements.Memory)
+										req.Limits[corev1.ResourceMemory] = resource.MustParse(task.Spec.ResourceRequirements.Memory)
+									}
+									return req
+								}
+
+								return corev1.ResourceRequirements{}
+							}(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := r.Create(ctx, job); err != nil {
+		logger.Error(err, "failed to create job", "job", jobName)
 
 		return ctrl.Result{}, err
 	}
 
 	now := metav1.Now()
-	task.Status = propellerv1.TaskStatus{
-		Phase:           propellerv1.TaskPendingPhase,
-		AssignedProplet: selectedProplet.Name,
-		StartedAt:       &now,
-		FinishedAt:      &now,
-		Error:           "",
-		Conditions: []propellerv1.TaskCondition{{
-			Type:               propellerv1.ScheduledType,
-			Status:             metav1.ConditionTrue,
-			LastTransitionTime: metav1.Now(),
-			Reason:             "PropletSelected",
-			Message:            fmt.Sprintf("Task scheduled to proplet %s", selectedProplet.Name),
-		}},
-	}
+	task.Status.Phase = propellerapiv1.TaskRunningPhase
+	task.Status.AssignedProplet = propletID
+	task.Status.StartedAt = &now
 
+	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Task is running")
 	if err := r.Status().Update(ctx, task); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	logger.Info("Task scheduled successfully", "proplet", selectedProplet.Name)
 
 	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 }
 
-func (r *TaskReconciler) findSuitableProplets(ctx context.Context, task *propellerv1.Task) ([]propellerv1.Proplet, error) {
-	var propletList propellerv1.PropletList
-	if err := r.List(ctx, &propletList, client.InNamespace(task.Namespace)); err != nil {
-		return nil, err
-	}
+func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 
-	var suitableProplets []propellerv1.Proplet
-	for _, proplet := range propletList.Items {
-		if r.isPropletSuitable(&proplet, task) {
-			suitableProplets = append(suitableProplets, proplet)
-		}
-	}
+	if r.pubsub == nil {
+		logger.Error(nil, "mqtt pubsub not configured for external execution")
 
-	return suitableProplets, nil
-}
+		now := metav1.Now()
+		task.Status.Phase = propellerapiv1.TaskFailedPhase
+		task.Status.FinishedAt = &now
+		task.Status.Error = "mqtt pubsub not configured for external execution"
+		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "MQTTNotConfigured", task.Status.Error)
+		_ = r.Status().Update(ctx, task)
 
-func (r *TaskReconciler) isPropletSuitable(proplet *propellerv1.Proplet, task *propellerv1.Task) bool {
-	if proplet.Status.Phase != propellerv1.PropletRunningPhase {
-		return false
-	}
-
-	// Check proplet type preference
-	if task.Spec.PreferredPropletType != propellerv1.AnyProplet {
-		if (task.Spec.PreferredPropletType == propellerv1.K8sProplet &&
-			proplet.Spec.Type != propellerv1.K8sProplet) ||
-			(task.Spec.PreferredPropletType == propellerv1.ExternalProplet &&
-				proplet.Spec.Type != propellerv1.ExternalProplet) {
-			return false
-		}
-	}
-
-	// Check selector requirements
-	if task.Spec.PropletSelector != nil {
-		if len(task.Spec.PropletSelector.MatchDeviceTypes) > 0 {
-			if proplet.Spec.Type != propellerv1.ExternalProplet ||
-				proplet.Spec.External == nil {
-				return false
-			}
-
-			if !slices.Contains(task.Spec.PropletSelector.MatchDeviceTypes, proplet.Spec.External.DeviceType) {
-				return false
-			}
-		}
-
-		// Check capabilities
-		if len(task.Spec.PropletSelector.MatchCapabilities) > 0 {
-			if proplet.Spec.Type != propellerv1.ExternalProplet ||
-				proplet.Spec.External == nil {
-				return false
-			}
-
-			for _, reqCapability := range task.Spec.PropletSelector.MatchCapabilities {
-				if !slices.Contains(proplet.Spec.External.Capabilities, reqCapability) {
-					return false
-				}
-			}
-		}
-
-		// Check labels
-		if len(task.Spec.PropletSelector.MatchLabels) > 0 {
-			for key, value := range task.Spec.PropletSelector.MatchLabels {
-				if proplet.Labels[key] != value {
-					return false
-				}
-			}
-		}
-	}
-
-	return true
-}
-
-func (r *TaskReconciler) executeTask(ctx context.Context, task *propellerv1.Task) (ctrl.Result, error) {
-	logger := logf.FromContext(ctx).WithValues("task", task.Name, "action", "execute")
-
-	if task.Status.AssignedProplet == "" {
-		logger.Error(errors.New("no proplet assigned"), "no proplet assigned")
-
-		return r.scheduleTask(ctx, task)
+		return ctrl.Result{}, nil
 	}
 
 	topic := r.baseTopic + "/control/manager/start"
+
+	env := map[string]any{}
+	for k, v := range task.Spec.Env {
+		env[k] = v
+	}
+
+	env["PROPLET_ID"] = propletID
+	env["TASK_ID"] = string(task.UID)
+
 	payload := map[string]any{
 		"id":        string(task.UID),
-		"name":      task.Spec.FunctionName,
-		"state":     0,
+		"name":      task.Name,
 		"image_url": task.Spec.ImageURL,
 		"file":      task.Spec.File,
 		"inputs":    task.Spec.Inputs,
 		"cli_args":  task.Spec.CLIArgs,
+		"env":       env,
+		"daemon":    task.Spec.Daemon,
+		"mode":      task.Spec.Mode,
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {
-		logger.Error(err, "Failed to publish task start command")
+		logger.Error(err, "failed to publish external task start command")
 
 		return ctrl.Result{}, err
 	}
 
 	now := metav1.Now()
-	task.Status.Phase = propellerv1.TaskRunningPhase
+	task.Status.Phase = propellerapiv1.TaskRunningPhase
+	task.Status.AssignedProplet = propletID
 	task.Status.StartedAt = &now
-	task.Status.Conditions = append(task.Status.Conditions, propellerv1.TaskCondition{
-		Type:               propellerv1.StartedType,
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: now,
-		Reason:             "TaskStarted",
-		Message:            "Task execution started on proplet",
-	})
+
+	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "External task is running")
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+}
+
+func (r *TaskReconciler) resolvePropletID(task *propellerapiv1.Task) string {
+	if task.Spec.PropletSelector != nil {
+		if task.Spec.PropletSelector.PropletID != "" {
+			return task.Spec.PropletSelector.PropletID
+		}
+	}
+
+	return ""
+}
+
+func (r *TaskReconciler) handleJobSucceeded(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
+	now := metav1.Now()
+	task.Status.Phase = propellerapiv1.TaskCompletedPhase
+	task.Status.FinishedAt = &now
+
+	r.extractAndStoreResult(ctx, task, job)
+
+	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionTrue, "Completed", "Task completed successfully")
 
 	if err := r.Status().Update(ctx, task); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Task execution started", "proplet", task.Status.AssignedProplet)
-
-	proplet := &propellerv1.Proplet{}
-	if err := r.Get(ctx, client.ObjectKey{Name: task.Status.AssignedProplet, Namespace: task.Namespace}, proplet); err != nil {
-		logger.Error(err, "Failed to find proplet")
-
-		return ctrl.Result{}, err
-	}
-
-	proplet.Status.Phase = propellerv1.PropletRunningPhase
-	proplet.Status.TaskCount = proplet.Status.TaskCount + 1
-	if err := r.Status().Update(ctx, proplet); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{RequeueAfter: time.Minute * 2}, nil
+	return ctrl.Result{}, nil
 }
 
-func (r *TaskReconciler) monitorTask(ctx context.Context, task *propellerv1.Task) (ctrl.Result, error) {
-	if task.Status.StartedAt != nil {
-		elapsed := time.Since(task.Status.StartedAt.Time)
-		if elapsed > time.Hour {
-			task.Status.Phase = propellerv1.TaskFailedPhase
-			task.Status.Error = "Task execution timeout"
+func (r *TaskReconciler) handleJobFailed(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
+	now := metav1.Now()
+	task.Status.Phase = propellerapiv1.TaskFailedPhase
+	task.Status.FinishedAt = &now
 
-			now := metav1.Now()
-			task.Status.FinishedAt = &now
+	errorMsg := r.extractJobFailureMessage(job)
+	task.Status.Error = errorMsg
 
-			if err := r.Status().Update(ctx, task); err != nil {
-				return ctrl.Result{}, err
-			}
+	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "Failed", errorMsg)
 
-			return ctrl.Result{}, nil
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *TaskReconciler) extractJobFailureMessage(job *batchv1.Job) string {
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobFailed && condition.Message != "" {
+			return condition.Message
 		}
 	}
 
-	return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+	return "Job failed"
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub) error {
-	r.scheduler = scheduler.NewRoundRobin()
-	r.domainID = domainID
-	r.channelID = channelID
-	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+func (r *TaskReconciler) extractAndStoreResult(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) {
+	logger := log.FromContext(ctx)
+	result, err := ExtractResultFromJob(ctx, r.Client, job)
+	if err != nil {
+		logger.Error(err, "failed to extract result from job", "job", job.Name)
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&propellerv1.Task{}).
-		Named("task").
-		Complete(r)
+		return
+	}
+
+	if result == nil {
+		return
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err == nil {
+		task.Status.Results = &apiextensionsv1.JSON{Raw: resultJSON}
+	}
+}
+
+func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionType propellerapiv1.TaskConditionType, status metav1.ConditionStatus, reason, message string) {
+	if task.Status.Conditions == nil {
+		task.Status.Conditions = []propellerapiv1.TaskCondition{}
+	}
+
+	now := metav1.Now()
+	condition := propellerapiv1.TaskCondition{
+		Type:               conditionType,
+		Status:             status,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	found := false
+	for i, c := range task.Status.Conditions {
+		if c.Type == conditionType {
+			task.Status.Conditions[i] = condition
+			found = true
+
+			break
+		}
+	}
+	if !found {
+		task.Status.Conditions = append(task.Status.Conditions, condition)
+	}
 }
