@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -28,6 +29,7 @@ import (
 	"github.com/absmach/propeller/internal/mqtt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -803,34 +805,29 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 
 	logger := logf.FromContext(ctx).WithValues("task_id", taskID)
 
-	// Search across all namespaces to find the task
 	var tasks propellerv1.TaskList
-	if err := r.List(ctx, &tasks); err != nil {
-		return err
-	}
+	if err := r.List(ctx, &tasks); err == nil {
+		for i := range tasks.Items {
+			task := &tasks.Items[i]
+			if task.Name == taskID || task.UID == types.UID(taskID) {
+				resultJSON, err := json.Marshal(msg["results"])
+				if err == nil {
+					task.Status.Results = &apiextensionsv1.JSON{Raw: resultJSON}
+				}
+				task.Status.Phase = propellerv1.TaskCompletedPhase
+				now := metav1.Now()
+				task.Status.FinishedAt = &now
 
-	// Find the task with matching ID
-	var task *propellerv1.Task
-	for i := range tasks.Items {
-		if tasks.Items[i].Name == taskID || tasks.Items[i].UID == types.UID(taskID) {
-			task = &tasks.Items[i]
-			break
+				if err := r.Status().Update(ctx, task); err != nil {
+					return err
+				}
+
+				return nil
+			}
 		}
 	}
 
-	if task == nil {
-		logger.Info("Task resource not found, ignoring")
-		return nil
-	}
-
-	task.Status.Results = fmt.Sprintf("%v", msg["results"])
-	task.Status.Phase = propellerv1.TaskCompletedPhase
-	task.Status.FinishedAt = &metav1.Time{Time: time.Now()}
-
-	if err := r.Status().Update(ctx, task); err != nil {
-		return err
-	}
-
+	logger.Info("Task resource not found, ignoring")
 	return nil
 }
 
@@ -856,6 +853,9 @@ func (r *PropletReconciler) SetupWithManager(
 	r.pubsub = pubsub
 	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
 
+	if r.pubsub == nil || domainID == "" || channelID == "" {
+		return fmt.Errorf("MQTT connection is required: pubsub, domainID, and channelID must be configured")
+	}
 	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
 		return err
 	}

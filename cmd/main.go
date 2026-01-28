@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
+	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
 	"github.com/absmach/propeller/internal/controller"
 	"github.com/absmach/propeller/internal/mqtt"
 	// +kubebuilder:scaffold:imports
@@ -53,6 +54,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(propellerv1.AddToScheme(scheme))
+	utilruntime.Must(propellerv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -224,14 +226,36 @@ func main() {
 		os.Exit(1)
 	}
 
-	mqttPubSub, err := mqtt.NewPubSub(
-		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
-	)
-	if err != nil {
-		setupLog.Error(err, "failed to initialize mqtt pubsub")
+	var mqttPubSub mqtt.PubSub
+	hasPartialMQTTConfig := (mqttAddress != "" || clientID != "" || clientKey != "" || domainID != "" || channelID != "")
+	hasCompleteMQTTConfig := mqttAddress != "" && clientID != "" && clientKey != "" && domainID != "" && channelID != ""
+
+	if hasPartialMQTTConfig && !hasCompleteMQTTConfig {
+		setupLog.Error(nil, "MQTT configuration is incomplete: all MQTT parameters "+
+			"(mqtt-address, client-id, client-key, domain-id, channel-id) must be provided together")
 		os.Exit(1)
 	}
 
+	if hasCompleteMQTTConfig {
+		mqttPubSub, err = mqtt.NewPubSub(
+			mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+		)
+		if err != nil {
+			setupLog.Error(err, "failed to initialize mqtt pubsub")
+			os.Exit(1)
+		}
+		setupLog.Info("MQTT pubsub initialized successfully")
+	} else {
+		setupLog.Info("MQTT pubsub not configured; running in k8s-only mode (external proplets will not be supported)")
+	}
+
+	if err := (&controller.PropletReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
+		os.Exit(1)
+	}
 	if err := (&controller.TaskReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -239,11 +263,18 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
-	if err := (&controller.PropletReconciler{
+	if err := (&controller.FederatedJobReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "FederatedJob")
+		os.Exit(1)
+	}
+	if err := (&controller.TrainingRoundReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TrainingRound")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
