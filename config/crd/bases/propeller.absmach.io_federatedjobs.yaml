@@ -52,65 +52,43 @@ spec:
           spec:
             properties:
               aggregator:
-                description: Aggregator defines the aggregation algorithm
                 properties:
                   algorithm:
-                    description: Algorithm is the aggregation algorithm (e.g., "fedavg")
                     type: string
                   config:
-                    description: Config contains algorithm-specific configuration
                     x-kubernetes-preserve-unknown-fields: true
                 required:
                 - algorithm
                 type: object
               experimentId:
-                description: ExperimentID is a unique identifier for the experiment
                 type: string
               hyperparams:
-                description: Hyperparams are hyperparameters for the training
                 x-kubernetes-preserve-unknown-fields: true
               kOfN:
-                description: KOfN is the minimum number of participants required for
-                  aggregation
                 type: integer
               modelRef:
-                description: ModelRef is the OCI reference to the initial model
                 type: string
               participants:
-                description: Participants is a list of proplet IDs that will participate
-                  in the federated learning
                 items:
                   properties:
-                    namespace:
-                      description: Namespace is the Kubernetes namespace where the
-                        proplet is located
-                      type: string
                     propletId:
-                      description: PropletID is the ID of the proplet
                       type: string
                   required:
                   - propletId
                   type: object
                 type: array
               rounds:
-                description: Rounds defines the round configuration
                 properties:
                   strategy:
-                    description: Strategy is the round execution strategy (sequential
-                      or parallel)
                     type: string
                   total:
-                    description: Total is the total number of rounds
                     type: integer
                 required:
                 - total
                 type: object
               taskWasmImage:
-                description: TaskWasmImage is the OCI reference to the WASM image
-                  for the FL client task
                 type: string
               timeoutSeconds:
-                description: TimeoutSeconds is the timeout for each round in seconds
                 type: integer
             required:
             - aggregator
@@ -125,15 +103,10 @@ spec:
           status:
             properties:
               aggregatedModelRef:
-                description: AggregatedModelRef is the OCI reference to the latest
-                  aggregated model
                 type: string
               completedRounds:
-                description: CompletedRounds is the number of completed rounds
                 type: integer
               conditions:
-                description: Conditions represent the latest available observations
-                  of the object's state
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -190,28 +163,22 @@ spec:
                   type: object
                 type: array
               currentRound:
-                description: CurrentRound is the current round number
                 type: integer
               participants:
-                description: Participants is the status of each participant
                 items:
                   properties:
                     lastUpdate:
-                      description: LastUpdate is the timestamp of the last update
                       format: date-time
                       type: string
                     propletId:
-                      description: PropletID is the ID of the proplet
                       type: string
                     status:
-                      description: Status is the current status of the participant
                       type: string
                   required:
                   - propletId
                   type: object
                 type: array
               phase:
-                description: Phase is the current phase of the job
                 type: string
             type: object
         required:

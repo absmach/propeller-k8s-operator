@@ -23,6 +23,11 @@ type FederatedJobReconciler struct {
 
 const federatedJobConditionReady = "Ready"
 
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=federatedjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=federatedjobs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds/status,verbs=get;update;patch
+
 func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	namespace := req.Namespace

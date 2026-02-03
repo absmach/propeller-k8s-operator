@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: tasks.propeller.propeller.abstractmachines.fr
+  name: wasmtasks.propeller.absmach.io
 spec:
-  group: propeller.propeller.abstractmachines.fr
+  group: propeller.absmach.io
   names:
-    kind: Task
-    listKind: TaskList
-    plural: tasks
-    singular: task
+    kind: WasmTask
+    listKind: WasmTaskList
+    plural: wasmtasks
+    singular: wasmtask
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -30,13 +30,10 @@ spec:
     - jsonPath: .status.finishedAt
       name: Finish Time
       type: date
-    - jsonPath: .spec.preferredPropletType
-      name: Preferred Type
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:

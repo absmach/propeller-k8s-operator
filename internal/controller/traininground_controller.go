@@ -29,6 +29,12 @@ type TrainingRoundReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.absmach.io,resources=federatedjobs,verbs=get
+
 func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	namespace := req.Namespace

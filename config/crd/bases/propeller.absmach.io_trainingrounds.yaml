@@ -33,7 +33,6 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: TrainingRound is the Schema for the trainingrounds API
         properties:
           apiVersion:
             description: |-
@@ -55,7 +54,9 @@ spec:
           spec:
             properties:
               federatedJobRef:
-                description: FederatedJobRef is a reference to the parent FederatedJob
+                description: |-
+                  LocalObjectReference contains enough information to let you locate the
+                  referenced object inside the same namespace.
                 properties:
                   name:
                     default: ""
@@ -69,30 +70,20 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               hyperparams:
-                description: Hyperparams are hyperparameters for this round
                 x-kubernetes-preserve-unknown-fields: true
               kOfN:
-                description: KOfN is the minimum number of participants required for
-                  aggregation
                 type: integer
               modelRef:
-                description: ModelRef is the OCI reference to the model for this round
                 type: string
               participants:
-                description: Participants is a list of proplet IDs participating in
-                  this round
                 items:
                   type: string
                 type: array
               roundId:
-                description: RoundID is a unique identifier for this round
                 type: string
               taskWasmImage:
-                description: TaskWasmImage is the OCI reference to the WASM image
-                  for the FL client task
                 type: string
               timeoutSeconds:
-                description: TimeoutSeconds is the timeout for this round in seconds
                 type: integer
             required:
             - federatedJobRef
@@ -106,12 +97,8 @@ spec:
           status:
             properties:
               aggregatedModelRef:
-                description: AggregatedModelRef is the OCI reference to the aggregated
-                  model
                 type: string
               conditions:
-                description: Conditions represent the latest available observations
-                  of the object's state
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -168,22 +155,18 @@ spec:
                   type: object
                 type: array
               endTime:
-                description: EndTime is when the round ended
                 format: date-time
                 type: string
               participants:
-                description: Participants is the status of each participant
                 items:
                   properties:
                     propletId:
-                      description: PropletID is the ID of the proplet
                       type: string
                     status:
-                      description: Status is the current status of the participant
                       type: string
                     taskRef:
-                      description: TaskRef is a reference to the K8s Job for this
-                        participant's task
+                      description: ObjectReference contains enough information to
+                        let you inspect or modify the referred object.
                       properties:
                         apiVersion:
                           description: API version of the referent.
@@ -226,25 +209,19 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     updateReceived:
-                      description: UpdateReceived indicates if an update has been
-                        received from this participant
                       type: boolean
                   required:
                   - propletId
                   type: object
                 type: array
               phase:
-                description: Phase is the current phase of the round
                 type: string
               startTime:
-                description: StartTime is when the round started
                 format: date-time
                 type: string
               updatesReceived:
-                description: UpdatesReceived is the number of updates received
                 type: integer
               updatesRequired:
-                description: UpdatesRequired is the number of updates required (k-of-n)
                 type: integer
             type: object
         required:
