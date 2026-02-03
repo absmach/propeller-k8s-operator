@@ -1,0 +1,18 @@
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Task
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: addition-with-image-url
+spec:
+  name: addition-with-image-url
+  functionName: add
+  imageUrl: "docker.io/mrstevenyaga/add.wasm:latest"
+  inputs:
+    - 10
+    - 89
+  propletSelector:
+    propletId:
+  resourceRequirements:
+    cpu:

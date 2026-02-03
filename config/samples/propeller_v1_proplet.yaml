@@ -1,0 +1,25 @@
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: <your-k8s-proplet-name>
+spec:
+  connectionConfig:
+    channelId: "<your-channel-id>"
+    clientId: "<your-client-id>"
+    clientKey: "<your-client-key>"
+    domainId: "<your-domain-id>"
+    mqttAddress: "<your-mqtt-address>"
+    mqttQos: 1
+    mqttTimeout: 10s
+  external:
+  k8s:
+    image: "<your-proplet-image>"
+    logLevel: info
+    replicas: 1
+  resources:
+    cpu: 50m
+    memory: 128Mi
+  type: k8s

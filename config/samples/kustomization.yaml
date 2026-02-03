@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- propeller_v1_task.yaml
+- propeller_v1_proplet.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
+
