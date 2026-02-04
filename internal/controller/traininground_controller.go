@@ -235,7 +235,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 	logger := log.FromContext(ctx)
 
 	var collectedUpdates []UpdateEnvelope
-		if updatesJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"]; ok {
+	if updatesJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"]; ok {
 		if err := json.Unmarshal([]byte(updatesJSON), &collectedUpdates); err != nil {
 			logger.Error(err, "failed to unmarshal collected updates")
 		}
