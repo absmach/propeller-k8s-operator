@@ -3,22 +3,22 @@
 The Propeller K8s Operator is a Kubernetes operator designed to manage and schedule **WebAssembly (WASM) tasks** on a hybrid fleet of devices, which can be either Kubernetes pods or external devices. It introduces:
 
 - `Proplet` as the hybrid worker primitive (k8s or external), and
-- `WasmTask` as the canonical task API, plus supporting CRDs for scheduling and federated learning.
+- `Task` as the canonical task API, plus supporting CRDs for scheduling and federated learning.
 
 ## Overview
 
 The operator enables users to:
 
 - Define a pool of worker nodes (`Proplets`).
-- Schedule WASM workloads (`WasmTask`) onto those workers.
-- Orchestrate federated learning workflows via `FederatedJob` and `TrainingRound` layered on top of `WasmTask`.
+- Schedule WASM workloads (`Task`) onto those workers.
+- Orchestrate federated learning workflows via `FederatedJob` and `TrainingRound` layered on top of `Task`.
 
 ### Key Features
 
 - **Hybrid Worker Management:** Manage both Kubernetes-native workers (as `Deployments`) and external devices (e.g., IoT devices, bare-metal servers) as a unified pool of resources.
-- **Canonical WASM Task API:** `WasmTask` describes workloads in terms of `imageUrl`/`file`, `cliArgs`, `env`, `inputs`, `daemon`, `mode`, and scheduling knobs (`propletId`), matching the Propeller proplet runtime contract.
+- **Canonical WASM Task API:** `Task` describes workloads in terms of `imageUrl`/`file`, `cliArgs`, `env`, `inputs`, `daemon`, `mode`, and scheduling knobs (`propletId`), matching the Propeller proplet runtime contract.
 - **Flexible Scheduling:** Use explicit `propletId` to target specific proplets.
-- **MQTT Integration (adapter):** The operator communicates with external `Proplets` via MQTT `manager/start` and `results` messages, but exposes a Kubernetes-native `WasmTask` CRD to users.
+- **MQTT Integration (adapter):** The operator communicates with external `Proplets` via MQTT `manager/start` and `results` messages, but exposes a Kubernetes-native `Task` CRD to users.
 - **Federated Learning Orchestration:** `FederatedJob` and `TrainingRound` manage FL rounds and k-of-n aggregation by setting env vars such as `ROUND_ID`, `MODEL_URI`, and `HYPERPARAMS`; FL logic remains inside the proplet runtime and FL libraries.
 
 ## Custom Resources
@@ -27,7 +27,7 @@ The operator introduces several Custom Resource Definitions (CRDs):
 
 ### 1. `Proplet` (fleet primitive)
 
-`Proplet` represents a worker node that is available to execute `WasmTask`s. There are two types of `Proplets`:
+`Proplet` represents a worker node that is available to execute `Task`s. There are two types of `Proplets`:
 
 - **`k8s`:** A `Proplet` that is managed by the operator and runs as a `Deployment` within the Kubernetes cluster.
 - **`external`:** A `Proplet` that represents an external device. These devices are expected to communicate with the operator via MQTT.
@@ -67,9 +67,9 @@ spec:
     # ... MQTT connection details
 ```
 
-### 2. `WasmTask` (canonical task API)
+### 2. `Task` (canonical task API)
 
-`WasmTask` (`propeller.absmach.io/v1alpha1`) represents a WASM workload to be executed on a `Proplet`.
+`Task` (`propeller.propeller.abstractmachines.fr/v1`) represents a WASM workload to be executed on a `Proplet`.
 
 Key fields include:
 
@@ -82,14 +82,16 @@ Key fields include:
 - `mode`: execution mode (e.g. `infer`, `train`).
 - `propletId`: specific proplet to run the task on.
 
-**Example `WasmTask`:**
+**Example `Task`:**
 
 ```yaml
-apiVersion: propeller.absmach.io/v1alpha1
-kind: WasmTask
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Task
 metadata:
-  name: my-wasm-task
+  name: my-task
 spec:
+  name: my-task
+  functionName: my-function
   imageUrl: oci://registry/my-wasm-image:latest
   cliArgs:
     - "--flag"
@@ -100,13 +102,14 @@ spec:
     FOO: bar
   mode: infer
   daemon: false
-  propletId: my-k8s-proplet
+  propletSelector:
+    propletId: my-k8s-proplet
 ```
 
 When the selected `Proplet` is:
 
 - **k8s-backed**: the operator creates a `Job` + `ConfigMap` and runs the image inside the cluster; results are extracted into `status.results`.
-- **external**: the operator publishes an MQTT `manager/start` message derived from the `WasmTask.spec`, and updates `status` from MQTT `results` messages.
+- **external**: the operator publishes an MQTT `manager/start` message derived from the `Task.spec`, and updates `status` from MQTT `results` messages.
 
 ### 3. `FederatedJob` and `TrainingRound` (federated learning)
 
@@ -119,7 +122,7 @@ When the selected `Proplet` is:
 
 `TrainingRound` (`propeller.absmach.io/v1alpha1`) represents a single FL round:
 
-- Creates one `WasmTask` per participant with FL env vars:
+- Creates one `Task` per participant with FL env vars:
   - `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS`, `PROPLET_ID`, and, when available, aggregated global update env vars.
 - Tracks per-participant status and updates received.
 - Aggregates updates once `kOfN` is met and records an `AggregatedModelRef` for the next round.
@@ -135,11 +138,11 @@ The operator consists of several controllers:
   - For `k8s` `Proplets`, creates and reconciles a `Deployment`.
   - For `external` `Proplets`, monitors health via MQTT liveness and updates status.
 
-- **`WasmTaskReconciler`**:
+- **`TaskReconciler`**:
   - Canonical task controller that:
     - Validates the spec and resolves the target proplet (direct `propletId`).
     - For k8s-backed proplets: creates `Job` + `ConfigMap`, tracks Job completion/failure, and extracts results into `status.results`.
-    - For external proplets: publishes MQTT `manager/start` messages derived from `WasmTask.spec` and expects results via MQTT `results` which update `status`.
+    - For external proplets: publishes MQTT `manager/start` messages derived from `Task.spec` and expects results via MQTT `results` which update `status`.
 
 - **`FederatedJobReconciler`**:
   - Validates `FederatedJob` specs.
@@ -147,7 +150,7 @@ The operator consists of several controllers:
   - Tracks job phase, current round, and `aggregatedModelRef`.
 
 - **`TrainingRoundReconciler`**:
-  - For each round, creates participant `WasmTask`s targeting each proplet with appropriate FL env vars.
+  - For each round, creates participant `Task`s targeting each proplet with appropriate FL env vars.
   - Tracks participant task completion, counts updates, enforces `kOfN` and `timeoutSeconds`.
   - Aggregates collected FL updates (via FL packages) and stores an aggregated model reference and update envelope for subsequent rounds or finalization.
 
@@ -156,8 +159,8 @@ The operator consists of several controllers:
 The operator uses MQTT to communicate with external `Proplets`. The communication is structured around a base topic, and the operator:
 
 - Subscribes to liveness topics to maintain `Proplet` status.
-- Subscribes to `results` topics and maps results back to `WasmTask.status` (and legacy `Task` only as a fallback).
-- Publishes `manager/start` messages for external `WasmTask` executions, using fields derived solely from the `WasmTask` spec (no hidden runtime hacks).
+- Subscribes to `results` topics and maps results back to `Task.status`.
+- Publishes `manager/start` messages for external `Task` executions, using fields derived solely from the `Task` spec (no hidden runtime hacks).
 
 ## Prerequisites
 
@@ -178,7 +181,7 @@ Before running anything, pick your own names and connection details. You can exp
 ```bash
 export KUBE_CONTEXT="<your-kube-context-name>"
 export OPERATOR_NAMESPACE="<your-operator-namespace>"
-export WORKLOAD_NAMESPACE="<your-workload-namespace>"           # where Proplets and WasmTasks live
+export WORKLOAD_NAMESPACE="<your-workload-namespace>"           # where Proplets and Tasks live
 
 export OPERATOR_IMAGE="<your-registry>/propeller-operator:<tag>"
 export PROPLET_IMAGE="<your-registry>/propeller-proplet:<tag>"
@@ -193,10 +196,10 @@ export MQTT_CLIENT_KEY="<your-propeller-client-key>"
 
 - **`KUBE_CONTEXT`**: the Kubernetes context you want to use for testing.
 - **`OPERATOR_NAMESPACE`**: namespace where the operator manager will run.
-- **`WORKLOAD_NAMESPACE`**: namespace for `Proplet` and `WasmTask` resources.
+- **`WORKLOAD_NAMESPACE`**: namespace for `Proplet` and `Task` resources.
 - **`OPERATOR_IMAGE`**: container image for the operator manager.
 - **`PROPLET_IMAGE`**: container image for k8s-backed proplets.
-- **`WASM_IMAGE`**: container image (or WASM runner) used by `WasmTask` Jobs.
+- **`WASM_IMAGE`**: container image (or WASM runner) used by `Task` Jobs.
 - **`MQTT_*` values**: connection information for your MQTT/Propeller backend, used by external proplets and by the operator when talking to external devices.
 
 Always replace the placeholder values with your own. Do not reuse example names from this README in production.
@@ -344,21 +347,24 @@ You can use either k8s-backed proplets (managed as Deployments) or external prop
 
 The external proplet will only reach a healthy state once the MQTT-connected device is actually online and talking to the broker.
 
-### C. Run a simple WasmTask (k8s-backed execution)
+### C. Run a simple Task (k8s-backed execution)
 
 The goal here is to run a small workload on a k8s-backed proplet and observe how the operator creates a Job and tracks its status.
 
-1. Create a WasmTask manifest, for example `my-wasmtask.yaml`:
+1. Create a Task manifest, for example `my-task.yaml`:
 
    ```yaml
-   apiVersion: propeller.absmach.io/v1alpha1
-   kind: WasmTask
+   apiVersion: propeller.propeller.abstractmachines.fr/v1
+   kind: Task
    metadata:
-     name: <your-wasmtask-name>
+     name: <your-task-name>
      namespace: <your-workload-namespace>
    spec:
+     name: <your-task-name>
+     functionName: my-function
      imageUrl: "<your-wasm-image>"
-     propletId: "<your-k8s-proplet-name>"
+     propletSelector:
+       propletId: "<your-k8s-proplet-name>"
      mode: "infer"
      daemon: false
      env:
@@ -373,23 +379,23 @@ The goal here is to run a small workload on a k8s-backed proplet and observe how
 2. Apply the task and watch it:
 
    ```bash
-   kubectl apply -n "${WORKLOAD_NAMESPACE}" -f my-wasmtask.yaml
+   kubectl apply -n "${WORKLOAD_NAMESPACE}" -f my-task.yaml
 
-   kubectl get wasmtasks -n "${WORKLOAD_NAMESPACE}"
-   kubectl describe wasmtask -n "${WORKLOAD_NAMESPACE}" "<your-wasmtask-name>"
+   kubectl get tasks -n "${WORKLOAD_NAMESPACE}"
+   kubectl describe task -n "${WORKLOAD_NAMESPACE}" "<your-task-name>"
    ```
 
 3. Inspect the Job and pod created by the operator:
 
    ```bash
    kubectl get jobs -n "${WORKLOAD_NAMESPACE}"
-   kubectl describe job -n "${WORKLOAD_NAMESPACE}" "<your-wasmtask-name>-job"
+   kubectl describe job -n "${WORKLOAD_NAMESPACE}" "<your-task-name>-job"
 
-   kubectl get pods -n "${WORKLOAD_NAMESPACE}" -l "job-name=<your-wasmtask-name>-job"
+   kubectl get pods -n "${WORKLOAD_NAMESPACE}" -l "job-name=<your-task-name>-job"
    kubectl logs -n "${WORKLOAD_NAMESPACE}" "<your-job-pod-name>"
    ```
 
-You should see the `WasmTask` move through phases such as `Pending`, `Running`, and (if your workload completes successfully) `Completed`. The Job and its pod will reflect the container image and arguments you configured in the `WasmTask` spec.
+You should see the `Task` move through phases such as `Pending`, `Running`, and (if your workload completes successfully) `Completed`. The Job and its pod will reflect the container image and arguments you configured in the `Task` spec.
 
 ## Development
 

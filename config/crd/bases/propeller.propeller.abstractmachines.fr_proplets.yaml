@@ -62,6 +62,8 @@ spec:
             description: spec defines the desired state of Proplet
             properties:
               connectionConfig:
+                description: ConnectionConfig defines the MQTT connection configuration
+                  for a Proplet.
                 properties:
                   channelId:
                     minLength: 1
@@ -104,6 +106,8 @@ spec:
                     type: string
                 type: object
               k8s:
+                description: K8sPropletSpec defines the configuration for a Kubernetes-backed
+                  Proplet.
                 properties:
                   image:
                     minLength: 1

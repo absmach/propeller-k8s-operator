@@ -47,6 +47,7 @@ type ExternalPropletSpec struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
+// K8sPropletSpec defines the configuration for a Kubernetes-backed Proplet.
 type K8sPropletSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -60,6 +61,7 @@ type K8sPropletSpec struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 }
 
+// ConnectionConfig defines the MQTT connection configuration for a Proplet.
 type ConnectionConfig struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1

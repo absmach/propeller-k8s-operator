@@ -226,27 +226,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	var mqttPubSub mqtt.PubSub
-	hasPartialMQTTConfig := (mqttAddress != "" || clientID != "" || clientKey != "" || domainID != "" || channelID != "")
-	hasCompleteMQTTConfig := mqttAddress != "" && clientID != "" && clientKey != "" && domainID != "" && channelID != ""
-
-	if hasPartialMQTTConfig && !hasCompleteMQTTConfig {
-		setupLog.Error(nil, "MQTT configuration is incomplete: all MQTT parameters "+
-			"(mqtt-address, client-id, client-key, domain-id, channel-id) must be provided together")
+	mqttPubSub, err := mqtt.NewPubSub(
+		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to initialize mqtt pubsub")
 		os.Exit(1)
-	}
-
-	if hasCompleteMQTTConfig {
-		mqttPubSub, err = mqtt.NewPubSub(
-			mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
-		)
-		if err != nil {
-			setupLog.Error(err, "failed to initialize mqtt pubsub")
-			os.Exit(1)
-		}
-		setupLog.Info("MQTT pubsub initialized successfully")
-	} else {
-		setupLog.Info("MQTT pubsub not configured; running in k8s-only mode (external proplets will not be supported)")
 	}
 
 	if err := (&controller.PropletReconciler{
