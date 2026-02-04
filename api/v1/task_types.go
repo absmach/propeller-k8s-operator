@@ -58,13 +58,17 @@ type PropletSelector struct {
 }
 
 type PropletResources struct {
+	// CPU capacity (e.g., "1000m" for 1 CPU core)
 	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]*)?(m|))|([0-9]+m?)$`
 	CPU string `json:"cpu,omitempty"`
+	// Memory capacity (e.g., "1Gi")
 	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]*)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$`
-	Memory string            `json:"memory,omitempty"`
+	Memory string `json:"memory,omitempty"`
+	// Custom resource constraints
 	Custom map[string]string `json:"custom,omitempty"`
 }
 
+// TaskSpec defines the desired state of Task
 type TaskSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -108,6 +112,7 @@ type TaskCondition struct {
 	Message            string                 `json:"message,omitempty"`
 }
 
+// TaskStatus defines the observed state of Task.
 type TaskStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -136,21 +141,26 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="Preferred Type",type=string,JSONPath=`.spec.preferredPropletType`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
+// Task is the Schema for the tasks API
 type Task struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// metadata is a standard object metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
 
+	// spec defines the desired state of Task
 	// +required
 	Spec TaskSpec `json:"spec"`
 
+	// status defines the observed state of Task
 	// +optional
 	Status TaskStatus `json:"status,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
+// TaskList contains a list of Task
 type TaskList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
