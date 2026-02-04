@@ -4,8 +4,8 @@
 resources:
 - bases/propeller.propeller.abstractmachines.fr_proplets.yaml
 - bases/propeller.propeller.abstractmachines.fr_tasks.yaml
-- bases/propeller.absmach.io_federatedjobs.yaml
-- bases/propeller.absmach.io_trainingrounds.yaml
+- bases/propeller.propeller.abstractmachines.fr_federatedjobs.yaml
+- bases/propeller.propeller.abstractmachines.fr_trainingrounds.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

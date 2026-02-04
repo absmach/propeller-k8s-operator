@@ -29,11 +29,11 @@ type TrainingRoundReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.absmach.io,resources=trainingrounds/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.absmach.io,resources=federatedjobs,verbs=get
+// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs,verbs=get
 
 func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -126,7 +126,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 		env["MODEL_URI"] = round.Spec.ModelRef
 		env["PROPLET_ID"] = participantID
 
-		if aggregatedUpdateJSON, ok := round.Annotations["propeller.absmach.io/aggregated-update"]; ok {
+		if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"]; ok {
 			var aggEnv UpdateEnvelope
 			if err := json.Unmarshal([]byte(aggregatedUpdateJSON), &aggEnv); err == nil {
 				env["FL_GLOBAL_VERSION"] = aggEnv.GlobalVersion
@@ -235,7 +235,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 	logger := log.FromContext(ctx)
 
 	var collectedUpdates []UpdateEnvelope
-	if updatesJSON, ok := round.Annotations["propeller.absmach.io/collected-updates"]; ok {
+		if updatesJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"]; ok {
 		if err := json.Unmarshal([]byte(updatesJSON), &collectedUpdates); err != nil {
 			logger.Error(err, "failed to unmarshal collected updates")
 		}
@@ -333,7 +333,7 @@ func (r *TrainingRoundReconciler) storeCollectedUpdates(round *propellerv1alpha1
 		if round.Annotations == nil {
 			round.Annotations = make(map[string]string)
 		}
-		round.Annotations["propeller.absmach.io/collected-updates"] = string(updatesJSON)
+		round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"] = string(updatesJSON)
 	}
 }
 
@@ -402,7 +402,7 @@ func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerv1alpha1
 		if round.Annotations == nil {
 			round.Annotations = make(map[string]string)
 		}
-		round.Annotations["propeller.absmach.io/aggregated-update"] = string(aggJSON)
+		round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"] = string(aggJSON)
 	}
 }
 

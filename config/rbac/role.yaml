@@ -53,9 +53,11 @@ rules:
   - update
   - watch
 - apiGroups:
-  - propeller.absmach.io
+  - propeller.propeller.abstractmachines.fr
   resources:
   - federatedjobs
+  - proplets
+  - tasks
   - trainingrounds
   verbs:
   - create
@@ -66,9 +68,11 @@ rules:
   - update
   - watch
 - apiGroups:
-  - propeller.absmach.io
+  - propeller.propeller.abstractmachines.fr
   resources:
   - federatedjobs/status
+  - proplets/status
+  - tasks/status
   - trainingrounds/status
   verbs:
   - get
@@ -77,29 +81,7 @@ rules:
 - apiGroups:
   - propeller.propeller.abstractmachines.fr
   resources:
-  - proplets
-  - tasks
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - propeller.propeller.abstractmachines.fr
-  resources:
   - proplets/finalizers
   - tasks/finalizers
   verbs:
-  - update
-- apiGroups:
-  - propeller.propeller.abstractmachines.fr
-  resources:
-  - proplets/status
-  - tasks/status
-  verbs:
-  - get
-  - patch
   - update

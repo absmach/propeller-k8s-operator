@@ -103,7 +103,7 @@ spec:
   mode: infer
   daemon: false
   propletSelector:
-    propletId: my-k8s-proplet
+  propletId: my-k8s-proplet
 ```
 
 When the selected `Proplet` is:
@@ -113,14 +113,14 @@ When the selected `Proplet` is:
 
 ### 3. `FederatedJob` and `TrainingRound` (federated learning)
 
-`FederatedJob` (`propeller.absmach.io/v1alpha1`) defines a federated learning experiment:
+`FederatedJob` (`propeller.propeller.abstractmachines.fr/v1alpha1`) defines a federated learning experiment:
 
 - `experimentId`, `modelRef`, and `taskWasmImage`.
 - Participants (proplet IDs).
 - `kOfN` and `timeoutSeconds`.
 - Aggregation algorithm/config via `aggregator`.
 
-`TrainingRound` (`propeller.absmach.io/v1alpha1`) represents a single FL round:
+`TrainingRound` (`propeller.propeller.abstractmachines.fr/v1alpha1`) represents a single FL round:
 
 - Creates one `Task` per participant with FL env vars:
   - `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS`, `PROPLET_ID`, and, when available, aggregated global update env vars.
@@ -364,7 +364,7 @@ The goal here is to run a small workload on a k8s-backed proplet and observe how
      functionName: my-function
      imageUrl: "<your-wasm-image>"
      propletSelector:
-       propletId: "<your-k8s-proplet-name>"
+     propletId: "<your-k8s-proplet-name>"
      mode: "infer"
      daemon: false
      env:

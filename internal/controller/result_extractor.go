@@ -19,7 +19,7 @@ func ExtractResultFromJob(ctx context.Context, c client.Client, job *batchv1.Job
 	startTime := time.Now()
 	_ = startTime
 
-	if resultJSON, ok := job.Annotations["propeller.absmach.io/result"]; ok {
+	if resultJSON, ok := job.Annotations["propeller.propeller.abstractmachines.fr/result"]; ok {
 		var result map[string]any
 		if err := json.Unmarshal([]byte(resultJSON), &result); err == nil {
 			return result, nil
@@ -78,7 +78,7 @@ func ExtractResultFromJob(ctx context.Context, c client.Client, job *batchv1.Job
 		}
 	}
 
-	if resultJSON, ok := succeededPod.Annotations["propeller.absmach.io/result"]; ok {
+	if resultJSON, ok := succeededPod.Annotations["propeller.propeller.abstractmachines.fr/result"]; ok {
 		var result map[string]any
 		if err := json.Unmarshal([]byte(resultJSON), &result); err == nil {
 			return result, nil

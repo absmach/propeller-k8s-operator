@@ -4,25 +4,28 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: federatedjobs.propeller.absmach.io
+  name: trainingrounds.propeller.propeller.abstractmachines.fr
 spec:
-  group: propeller.absmach.io
+  group: propeller.propeller.abstractmachines.fr
   names:
-    kind: FederatedJob
-    listKind: FederatedJobList
-    plural: federatedjobs
-    singular: federatedjob
+    kind: TrainingRound
+    listKind: TrainingRoundList
+    plural: trainingrounds
+    singular: traininground
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .status.currentRound
-      name: Current Round
+    - jsonPath: .spec.federatedJobRef.name
+      name: Job
+      type: string
+    - jsonPath: .status.updatesReceived
+      name: Updates
       type: integer
-    - jsonPath: .status.completedRounds
-      name: Completed Rounds
+    - jsonPath: .status.updatesRequired
+      name: Required
       type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -30,7 +33,6 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: FederatedJob is the Schema for the federatedjobs API
         properties:
           apiVersion:
             description: |-
@@ -51,17 +53,22 @@ spec:
             type: object
           spec:
             properties:
-              aggregator:
+              federatedJobRef:
+                description: |-
+                  LocalObjectReference contains enough information to let you locate the
+                  referenced object inside the same namespace.
                 properties:
-                  algorithm:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                     type: string
-                  config:
-                    x-kubernetes-preserve-unknown-fields: true
-                required:
-                - algorithm
                 type: object
-              experimentId:
-                type: string
+                x-kubernetes-map-type: atomic
               hyperparams:
                 x-kubernetes-preserve-unknown-fields: true
               kOfN:
@@ -70,33 +77,20 @@ spec:
                 type: string
               participants:
                 items:
-                  properties:
-                    propletId:
-                      type: string
-                  required:
-                  - propletId
-                  type: object
+                  type: string
                 type: array
-              rounds:
-                properties:
-                  strategy:
-                    type: string
-                  total:
-                    type: integer
-                required:
-                - total
-                type: object
+              roundId:
+                type: string
               taskWasmImage:
                 type: string
               timeoutSeconds:
                 type: integer
             required:
-            - aggregator
-            - experimentId
+            - federatedJobRef
             - kOfN
             - modelRef
             - participants
-            - rounds
+            - roundId
             - taskWasmImage
             - timeoutSeconds
             type: object
@@ -104,8 +98,6 @@ spec:
             properties:
               aggregatedModelRef:
                 type: string
-              completedRounds:
-                type: integer
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -162,24 +154,75 @@ spec:
                   - type
                   type: object
                 type: array
-              currentRound:
-                type: integer
+              endTime:
+                format: date-time
+                type: string
               participants:
                 items:
                   properties:
-                    lastUpdate:
-                      format: date-time
-                      type: string
                     propletId:
                       type: string
                     status:
                       type: string
+                    taskRef:
+                      description: ObjectReference contains enough information to
+                        let you inspect or modify the referred object.
+                      properties:
+                        apiVersion:
+                          description: API version of the referent.
+                          type: string
+                        fieldPath:
+                          description: |-
+                            If referring to a piece of an object instead of an entire object, this string
+                            should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                            For example, if the object reference is to a container within a pod, this would take on a value like:
+                            "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                            the event) or if no container name is specified "spec.containers[2]" (container with
+                            index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                            referencing a part of an object.
+                          type: string
+                        kind:
+                          description: |-
+                            Kind of the referent.
+                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                          type: string
+                        name:
+                          description: |-
+                            Name of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                          type: string
+                        resourceVersion:
+                          description: |-
+                            Specific resourceVersion to which this reference is made, if any.
+                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                          type: string
+                        uid:
+                          description: |-
+                            UID of the referent.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    updateReceived:
+                      type: boolean
                   required:
                   - propletId
                   type: object
                 type: array
               phase:
                 type: string
+              startTime:
+                format: date-time
+                type: string
+              updatesReceived:
+                type: integer
+              updatesRequired:
+                type: integer
             type: object
         required:
         - metadata

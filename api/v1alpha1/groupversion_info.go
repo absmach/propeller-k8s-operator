@@ -1,5 +1,5 @@
 // +kubebuilder:object:generate=true
-// +groupName=propeller.absmach.io
+// +groupName=propeller.propeller.abstractmachines.fr
 package v1alpha1
 
 import (
@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	GroupVersion = schema.GroupVersion{Group: "propeller.absmach.io", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "propeller.propeller.abstractmachines.fr", Version: "v1alpha1"}
 
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
 
