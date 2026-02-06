@@ -234,6 +234,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if mqttPubSub == nil || domainID == "" || channelID == "" {
+		setupLog.Error(nil, "MQTT connection is required: pubsub, domainID, and channelID must be configured")
+		os.Exit(1)
+	}
+
 	if err := (&controller.PropletReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

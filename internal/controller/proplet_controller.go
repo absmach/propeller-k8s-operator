@@ -853,9 +853,6 @@ func (r *PropletReconciler) SetupWithManager(
 	r.pubsub = pubsub
 	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
 
-	if r.pubsub == nil || domainID == "" || channelID == "" {
-		return fmt.Errorf("MQTT connection is required: pubsub, domainID, and channelID must be configured")
-	}
 	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
 		return err
 	}
