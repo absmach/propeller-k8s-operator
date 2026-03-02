@@ -127,6 +127,8 @@ type PropletStatus struct {
 	Phase      PropletPhase       `json:"phase"`
 	Conditions []PropletCondition `json:"conditions,omitempty"`
 	LastSeen   *metav1.Time       `json:"lastSeen,omitempty"`
+	// AliveHistory stores recent heartbeat timestamps for liveness tracking
+	AliveHistory []metav1.Time `json:"aliveHistory,omitempty"`
 	// +kubebuilder:default=0
 	TaskCount          uint64            `json:"taskCount"`
 	AvailableResources *PropletResources `json:"availableResources,omitempty"`

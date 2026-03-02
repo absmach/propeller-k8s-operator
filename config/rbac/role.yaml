@@ -56,6 +56,7 @@ rules:
   - propeller.propeller.abstractmachines.fr
   resources:
   - federatedjobs
+  - propellerjobs
   - proplets
   - tasks
   - trainingrounds
@@ -71,6 +72,7 @@ rules:
   - propeller.propeller.abstractmachines.fr
   resources:
   - federatedjobs/status
+  - propellerjobs/status
   - proplets/status
   - tasks/status
   - trainingrounds/status
@@ -81,6 +83,7 @@ rules:
 - apiGroups:
   - propeller.propeller.abstractmachines.fr
   resources:
+  - propellerjobs/finalizers
   - proplets/finalizers
   - tasks/finalizers
   verbs:

@@ -28,10 +28,14 @@ import (
 type (
 	// +kubebuilder:validation:Enum=k8s;external;any
 	PropletKind string
-	// +kubebuilder:validation:Enum=pending;scheduled;running;completed;failed
+	// +kubebuilder:validation:Enum=pending;scheduled;running;completed;failed;skipped;interrupted
 	TaskPhase string
 	// +kubebuilder:validation:Enum=Scheduled;Started;Completed
 	TaskConditionType string
+	// +kubebuilder:validation:Enum=standard;federated
+	TaskKind string
+	// +kubebuilder:validation:Enum=infer;train
+	TaskMode string
 )
 
 const (
@@ -39,15 +43,26 @@ const (
 	ExternalProplet PropletKind = "external"
 	AnyProplet      PropletKind = "any"
 
-	TaskPendingPhase   TaskPhase = "pending"
-	TaskScheduledPhase TaskPhase = "scheduled"
-	TaskRunningPhase   TaskPhase = "running"
-	TaskCompletedPhase TaskPhase = "completed"
-	TaskFailedPhase    TaskPhase = "failed"
+	TaskPendingPhase     TaskPhase = "pending"
+	TaskScheduledPhase   TaskPhase = "scheduled"
+	TaskRunningPhase     TaskPhase = "running"
+	TaskCompletedPhase   TaskPhase = "completed"
+	TaskFailedPhase      TaskPhase = "failed"
+	TaskSkippedPhase     TaskPhase = "skipped"
+	TaskInterruptedPhase TaskPhase = "interrupted"
 
 	ScheduledType TaskConditionType = "Scheduled"
 	StartedType   TaskConditionType = "Started"
 	CompletedType TaskConditionType = "Completed"
+
+	TaskKindStandard  TaskKind = "standard"
+	TaskKindFederated TaskKind = "federated"
+
+	TaskModeInfer TaskMode = "infer"
+	TaskModeTrain TaskMode = "train"
+
+	RunIfSuccess = "success"
+	RunIfFailure = "failure"
 )
 
 type PropletSelector struct {
@@ -81,7 +96,10 @@ type TaskSpec struct {
 	Name string `json:"name"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	FunctionName    string           `json:"functionName"`
+	FunctionName string `json:"functionName"`
+	// +kubebuilder:validation:Enum=standard;federated
+	// +kubebuilder:default="standard"
+	Kind            TaskKind         `json:"kind,omitempty"`
 	ImageURL        string           `json:"imageUrl,omitempty"`
 	File            []byte           `json:"file,omitempty"`
 	CLIArgs         []string         `json:"cliArgs,omitempty"`
@@ -93,15 +111,51 @@ type TaskSpec struct {
 	ResourceRequirements *PropletResources    `json:"resourceRequirements,omitempty,omitzero"`
 	Env                  map[string]string    `json:"env,omitempty"`
 	Daemon               bool                 `json:"daemon,omitempty"`
-	Mode                 string               `json:"mode,omitempty"`
+	Mode                 TaskMode             `json:"mode,omitempty"`
 	MonitoringProfile    *MonitoringProfile   `json:"monitoringProfile,omitempty"`
 	RestartPolicy        corev1.RestartPolicy `json:"restartPolicy,omitempty"`
+
+	// Confidential computing fields
+	Encrypted       bool   `json:"encrypted,omitempty"`
+	KBSResourcePath string `json:"kbsResourcePath,omitempty"`
+
+	// Workflow/DAG fields
+	// DependsOn specifies task IDs that must complete before this task runs
+	DependsOn []string `json:"dependsOn,omitempty"`
+	// RunIf specifies when to run: "success" (default) or "failure"
+	// +kubebuilder:validation:Enum=success;failure
+	RunIf string `json:"runIf,omitempty"`
+	// WorkflowID groups tasks into a workflow for DAG execution
+	WorkflowID string `json:"workflowId,omitempty"`
+	// JobID groups tasks into a job for batch execution
+	JobID string `json:"jobId,omitempty"`
+
+	// Scheduling fields
+	// Schedule is a cron expression for recurring tasks
+	Schedule string `json:"schedule,omitempty"`
+	// IsRecurring indicates if the task should repeat after completion
+	IsRecurring bool `json:"isRecurring,omitempty"`
+	// Timezone for schedule interpretation (default: UTC)
+	Timezone string `json:"timezone,omitempty"`
+	// Priority (higher values = higher priority, default: 50)
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=50
+	Priority int `json:"priority,omitempty"`
 }
 
+// MonitoringProfile defines monitoring configuration for task execution
 type MonitoringProfile struct {
-	Enabled  bool     `json:"enabled,omitempty"`
-	Interval int      `json:"interval,omitempty"`
-	Metrics  []string `json:"metrics,omitempty"`
+	Enabled                bool             `json:"enabled,omitempty"`
+	Interval               *metav1.Duration `json:"interval,omitempty"`
+	CollectCPU             bool             `json:"collectCpu,omitempty"`
+	CollectMemory          bool             `json:"collectMemory,omitempty"`
+	CollectDiskIO          bool             `json:"collectDiskIo,omitempty"`
+	CollectThreads         bool             `json:"collectThreads,omitempty"`
+	CollectFileDescriptors bool             `json:"collectFileDescriptors,omitempty"`
+	ExportToMQTT           bool             `json:"exportToMqtt,omitempty"`
+	RetainHistory          bool             `json:"retainHistory,omitempty"`
+	HistorySize            int              `json:"historySize,omitempty"`
 }
 
 type TaskCondition struct {
@@ -124,6 +178,8 @@ type TaskStatus struct {
 	UpdatedAt       *metav1.Time `json:"updatedAt,omitempty,omitzero"`
 	StartedAt       *metav1.Time `json:"startedAt,omitempty,omitzero"`
 	FinishedAt      *metav1.Time `json:"finishedAt,omitempty,omitzero"`
+	// NextRun is the next scheduled execution time for recurring tasks
+	NextRun *metav1.Time `json:"nextRun,omitempty,omitzero"`
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Results    *apiextensionsv1.JSON `json:"results,omitempty"`
 	Error      string                `json:"error,omitempty"`

@@ -267,6 +267,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "TrainingRound")
 		os.Exit(1)
 	}
+	if err := (&controller.PropellerJobReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PropellerJob")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

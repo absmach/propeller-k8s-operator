@@ -354,15 +354,43 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 	env["TASK_ID"] = string(task.UID)
 
 	payload := map[string]any{
-		"id":        string(task.UID),
-		"name":      task.Name,
-		"image_url": task.Spec.ImageURL,
-		"file":      task.Spec.File,
-		"inputs":    task.Spec.Inputs,
-		"cli_args":  task.Spec.CLIArgs,
-		"env":       env,
-		"daemon":    task.Spec.Daemon,
-		"mode":      task.Spec.Mode,
+		"id":                string(task.UID),
+		"name":              task.Name,
+		"kind":              task.Spec.Kind,
+		"image_url":         task.Spec.ImageURL,
+		"file":              task.Spec.File,
+		"inputs":            task.Spec.Inputs,
+		"cli_args":          task.Spec.CLIArgs,
+		"env":               env,
+		"daemon":            task.Spec.Daemon,
+		"mode":              task.Spec.Mode,
+		"encrypted":         task.Spec.Encrypted,
+		"kbs_resource_path": task.Spec.KBSResourcePath,
+		"proplet_id":        propletID,
+		"depends_on":        task.Spec.DependsOn,
+		"run_if":            task.Spec.RunIf,
+		"workflow_id":       task.Spec.WorkflowID,
+		"job_id":            task.Spec.JobID,
+		"priority":          task.Spec.Priority,
+		"schedule":          task.Spec.Schedule,
+		"is_recurring":      task.Spec.IsRecurring,
+		"timezone":          task.Spec.Timezone,
+	}
+
+	// Add monitoring profile if present
+	if task.Spec.MonitoringProfile != nil {
+		payload["monitoring_profile"] = map[string]any{
+			"enabled":                  task.Spec.MonitoringProfile.Enabled,
+			"interval":                 task.Spec.MonitoringProfile.Interval.Duration.String(),
+			"collect_cpu":              task.Spec.MonitoringProfile.CollectCPU,
+			"collect_memory":           task.Spec.MonitoringProfile.CollectMemory,
+			"collect_disk_io":          task.Spec.MonitoringProfile.CollectDiskIO,
+			"collect_threads":          task.Spec.MonitoringProfile.CollectThreads,
+			"collect_file_descriptors": task.Spec.MonitoringProfile.CollectFileDescriptors,
+			"export_to_mqtt":           task.Spec.MonitoringProfile.ExportToMQTT,
+			"retain_history":           task.Spec.MonitoringProfile.RetainHistory,
+			"history_size":             task.Spec.MonitoringProfile.HistorySize,
+		}
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {

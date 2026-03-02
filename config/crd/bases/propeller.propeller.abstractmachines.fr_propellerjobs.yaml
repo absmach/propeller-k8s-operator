@@ -1,0 +1,355 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: propellerjobs.propeller.propeller.abstractmachines.fr
+spec:
+  group: propeller.propeller.abstractmachines.fr
+  names:
+    kind: PropellerJob
+    listKind: PropellerJobList
+    plural: propellerjobs
+    shortNames:
+    - pjob
+    singular: propellerjob
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.executionMode
+      name: Mode
+      type: string
+    - jsonPath: .status.taskCount
+      name: Tasks
+      type: integer
+    - jsonPath: .status.completedCount
+      name: Completed
+      type: integer
+    - jsonPath: .status.failedCount
+      name: Failed
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          PropellerJob is the Schema for the propellerjobs API
+          PropellerJob groups multiple Tasks for coordinated execution with DAG support
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PropellerJobSpec defines the desired state of PropellerJob
+            properties:
+              executionMode:
+                allOf:
+                - enum:
+                  - parallel
+                  - sequential
+                  - configurable
+                - enum:
+                  - parallel
+                  - sequential
+                  - configurable
+                default: configurable
+                description: ExecutionMode determines how tasks are executed
+                type: string
+              name:
+                minLength: 1
+                type: string
+              taskRefs:
+                description: TaskRefs references existing Task resources by name
+                items:
+                  type: string
+                type: array
+              tasks:
+                description: Tasks is a list of task specifications to execute as
+                  part of this job
+                items:
+                  description: TaskSpec defines the desired state of Task
+                  properties:
+                    cliArgs:
+                      items:
+                        type: string
+                      type: array
+                    daemon:
+                      type: boolean
+                    dependsOn:
+                      description: |-
+                        Workflow/DAG fields
+                        DependsOn specifies task IDs that must complete before this task runs
+                      items:
+                        type: string
+                      type: array
+                    encrypted:
+                      description: Confidential computing fields
+                      type: boolean
+                    env:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    file:
+                      format: byte
+                      type: string
+                    functionName:
+                      minLength: 1
+                      type: string
+                    imageUrl:
+                      type: string
+                    inputs:
+                      items:
+                        format: int64
+                        type: integer
+                      type: array
+                    isRecurring:
+                      description: IsRecurring indicates if the task should repeat
+                        after completion
+                      type: boolean
+                    jobId:
+                      description: JobID groups tasks into a job for batch execution
+                      type: string
+                    kbsResourcePath:
+                      type: string
+                    kind:
+                      allOf:
+                      - enum:
+                        - standard
+                        - federated
+                      - enum:
+                        - standard
+                        - federated
+                      default: standard
+                      type: string
+                    mode:
+                      enum:
+                      - infer
+                      - train
+                      type: string
+                    monitoringProfile:
+                      description: MonitoringProfile defines monitoring configuration
+                        for task execution
+                      properties:
+                        collectCpu:
+                          type: boolean
+                        collectDiskIo:
+                          type: boolean
+                        collectFileDescriptors:
+                          type: boolean
+                        collectMemory:
+                          type: boolean
+                        collectThreads:
+                          type: boolean
+                        enabled:
+                          type: boolean
+                        exportToMqtt:
+                          type: boolean
+                        historySize:
+                          type: integer
+                        interval:
+                          type: string
+                        retainHistory:
+                          type: boolean
+                      type: object
+                    name:
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    preferredPropletType:
+                      allOf:
+                      - enum:
+                        - k8s
+                        - external
+                        - any
+                      - enum:
+                        - k8s
+                        - external
+                        - any
+                      default: any
+                      type: string
+                    priority:
+                      default: 50
+                      description: 'Priority (higher values = higher priority, default:
+                        50)'
+                      maximum: 100
+                      minimum: 0
+                      type: integer
+                    propletSelector:
+                      properties:
+                        matchCapabilities:
+                          items:
+                            type: string
+                          type: array
+                        matchDeviceTypes:
+                          items:
+                            type: string
+                          type: array
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        propletId:
+                          type: string
+                      type: object
+                    resourceRequirements:
+                      properties:
+                        cpu:
+                          description: CPU capacity (e.g., "1000m" for 1 CPU core)
+                          pattern: ^([0-9]+(\.[0-9]*)?(m|))|([0-9]+m?)$
+                          type: string
+                        custom:
+                          additionalProperties:
+                            type: string
+                          description: Custom resource constraints
+                          type: object
+                        memory:
+                          description: Memory capacity (e.g., "1Gi")
+                          pattern: ^[0-9]+(\.[0-9]*)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
+                          type: string
+                      type: object
+                    restartPolicy:
+                      description: |-
+                        RestartPolicy describes how the container should be restarted.
+                        Only one of the following restart policies may be specified.
+                        If none of the following policies is specified, the default one
+                        is RestartPolicyAlways.
+                      type: string
+                    runIf:
+                      description: 'RunIf specifies when to run: "success" (default)
+                        or "failure"'
+                      enum:
+                      - success
+                      - failure
+                      type: string
+                    schedule:
+                      description: |-
+                        Scheduling fields
+                        Schedule is a cron expression for recurring tasks
+                      type: string
+                    timezone:
+                      description: 'Timezone for schedule interpretation (default:
+                        UTC)'
+                      type: string
+                    workflowId:
+                      description: WorkflowID groups tasks into a workflow for DAG
+                        execution
+                      type: string
+                  required:
+                  - functionName
+                  - name
+                  type: object
+                type: array
+            required:
+            - name
+            type: object
+          status:
+            description: PropellerJobStatus defines the observed state of PropellerJob
+            properties:
+              completedCount:
+                type: integer
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the job's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              failedCount:
+                type: integer
+              finishTime:
+                format: date-time
+                type: string
+              phase:
+                default: Pending
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                type: string
+              skippedCount:
+                type: integer
+              startTime:
+                format: date-time
+                type: string
+              taskCount:
+                type: integer
+            required:
+            - phase
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
