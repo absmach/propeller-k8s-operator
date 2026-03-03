@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
@@ -810,6 +811,14 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 		for i := range tasks.Items {
 			task := &tasks.Items[i]
 			if task.Name == taskID || task.UID == types.UID(taskID) {
+				// Validate state transition before updating
+				if !propellerv1.ValidStateTransition(task.Status.Phase, propellerv1.TaskCompletedPhase) {
+					logger.Info("Invalid state transition for result, ignoring",
+						"currentPhase", task.Status.Phase,
+						"requestedPhase", propellerv1.TaskCompletedPhase)
+					return nil
+				}
+
 				resultJSON, err := json.Marshal(msg["results"])
 				if err == nil {
 					task.Status.Results = &apiextensionsv1.JSON{Raw: resultJSON}
@@ -817,11 +826,13 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 				task.Status.Phase = propellerv1.TaskCompletedPhase
 				now := metav1.Now()
 				task.Status.FinishedAt = &now
+				task.Status.UpdatedAt = &now
 
 				if err := r.Status().Update(ctx, task); err != nil {
 					return err
 				}
 
+				logger.Info("Task completed with results")
 				return nil
 			}
 		}
@@ -833,15 +844,88 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 
 func (r *PropletReconciler) mqttHandler() func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
-		switch topic {
-		case r.baseTopic + "/control/proplet/alive":
+		// Use suffix matching for flexible topic handling
+		switch {
+		case strings.HasSuffix(topic, "/control/proplet/alive"):
 			return r.mqttLivenessHandler(context.Background(), msg)
-		case r.baseTopic + "/control/proplet/results":
+		case strings.HasSuffix(topic, "/control/proplet/results"):
 			return r.mqttResultHandler(context.Background(), msg)
+		case strings.HasSuffix(topic, "/control/proplet/status"):
+			return r.mqttStatusHandler(context.Background(), msg)
 		}
 
 		return nil
 	}
+}
+
+// mqttStatusHandler handles task status updates from external proplets
+func (r *PropletReconciler) mqttStatusHandler(ctx context.Context, msg map[string]any) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok || taskID == "" {
+		return errors.New("invalid or empty task_id in status message")
+	}
+
+	logger := logf.FromContext(ctx).WithValues("task_id", taskID)
+
+	status, _ := msg["status"].(string)
+	errorMsg, _ := msg["error"].(string)
+
+	var tasks propellerv1.TaskList
+	if err := r.List(ctx, &tasks); err != nil {
+		return err
+	}
+
+	for i := range tasks.Items {
+		task := &tasks.Items[i]
+		if task.Name == taskID || string(task.UID) == taskID {
+			var newPhase propellerv1.TaskPhase
+
+			switch status {
+			case "running":
+				newPhase = propellerv1.TaskRunningPhase
+			case "completed":
+				newPhase = propellerv1.TaskCompletedPhase
+			case "failed":
+				newPhase = propellerv1.TaskFailedPhase
+			case "interrupted":
+				newPhase = propellerv1.TaskInterruptedPhase
+			default:
+				logger.Info("Unknown task status received", "status", status)
+				return nil
+			}
+
+			// Validate state transition
+			if !propellerv1.ValidStateTransition(task.Status.Phase, newPhase) {
+				logger.Info("Invalid state transition, ignoring",
+					"currentPhase", task.Status.Phase,
+					"requestedPhase", newPhase)
+				return nil
+			}
+
+			task.Status.Phase = newPhase
+			now := metav1.Now()
+			task.Status.UpdatedAt = &now
+
+			if newPhase == propellerv1.TaskCompletedPhase || newPhase == propellerv1.TaskFailedPhase || newPhase == propellerv1.TaskInterruptedPhase {
+				task.Status.FinishedAt = &now
+			}
+
+			if errorMsg != "" {
+				task.Status.Error = errorMsg
+			}
+
+			if err := r.Status().Update(ctx, task); err != nil {
+				logger.Error(err, "Failed to update task status")
+				return err
+			}
+
+			logger.Info("Task status updated", "phase", newPhase)
+			return nil
+		}
+	}
+
+	logger.Info("Task not found, ignoring status update")
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -226,3 +226,28 @@ type TaskList struct {
 func init() {
 	SchemeBuilder.Register(&Task{}, &TaskList{})
 }
+
+// stateTransitionMap defines valid task phase transitions
+var stateTransitionMap = map[TaskPhase][]TaskPhase{
+	TaskPendingPhase:     {TaskScheduledPhase, TaskFailedPhase, TaskSkippedPhase},
+	TaskScheduledPhase:   {TaskRunningPhase, TaskFailedPhase, TaskSkippedPhase},
+	TaskRunningPhase:     {TaskCompletedPhase, TaskFailedPhase, TaskInterruptedPhase},
+	TaskCompletedPhase:   {TaskPendingPhase}, // Allow restart for recurring tasks
+	TaskFailedPhase:      {TaskPendingPhase}, // Allow retry
+	TaskSkippedPhase:     {},                 // Terminal state
+	TaskInterruptedPhase: {TaskPendingPhase}, // Allow resume
+}
+
+// ValidStateTransition checks if a transition from src to dst phase is allowed
+func ValidStateTransition(src, dst TaskPhase) bool {
+	validTransitions, ok := stateTransitionMap[src]
+	if !ok {
+		return false
+	}
+	for _, valid := range validTransitions {
+		if valid == dst {
+			return true
+		}
+	}
+	return false
+}
