@@ -7,9 +7,9 @@ import (
 )
 
 var (
-	ErrNoProplet          = errors.New("no proplet was provided")
-	ErrDeadProplers       = errors.New("all proplets are dead")
-	ErrNoCandidates       = errors.New("no candidate proplets match requirements")
+	ErrNoProplet             = errors.New("no proplet was provided")
+	ErrDeadProplers          = errors.New("all proplets are dead")
+	ErrNoCandidates          = errors.New("no candidate proplets match requirements")
 	ErrInsufficientResources = errors.New("no proplet has sufficient resources")
 )
 
