@@ -35,7 +35,7 @@ func (r *roundRobin) SelectProplet(t propellerv1.Task, proplets []propellerv1.Pr
 
 // SelectCandidateProplets filters proplets that are alive and match task requirements
 func (r *roundRobin) SelectCandidateProplets(t propellerv1.Task, proplets []propellerv1.Proplet) []propellerv1.Proplet {
-	var candidates []propellerv1.Proplet
+	candidates := make([]propellerv1.Proplet, 0, len(proplets))
 
 	for i := range proplets {
 		p := proplets[i]
