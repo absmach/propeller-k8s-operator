@@ -1,25 +1,29 @@
+# Kubernetes Proplet sample — runs the proplet as a pod managed by the operator
+# inside the cluster. The operator creates and manages the underlying Deployment.
+#
+# For a full walkthrough including credential provisioning and task execution, see:
+# https://docs.propeller.abstractmachines.fr/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Proplet
 metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: <your-k8s-proplet-name>
+  name: k8s-proplet
 spec:
-  connectionConfig:
-    channelId: "<your-channel-id>"
-    clientId: "<your-client-id>"
-    clientKey: "<your-client-key>"
-    domainId: "<your-domain-id>"
-    mqttAddress: "<your-mqtt-address>"
-    mqttQos: 1
-    mqttTimeout: 10s
-  external:
+  type: k8s
   k8s:
-    image: "<your-proplet-image>"
+    image: "ghcr.io/absmach/propeller/proplet:latest"
     logLevel: info
     replicas: 1
+  connectionConfig:
+    domainId: "<your-domain-id>"
+    channelId: "<your-channel-id>"
+    clientId: "<your-proplet-client-id>"
+    clientKey: "<your-proplet-client-key>"
+    mqttAddress: "tcp://<your-mqtt-broker>:1883"
+    mqttQos: 0
+    mqttTimeout: 30s
   resources:
-    cpu: 50m
-    memory: 128Mi
-  type: k8s
+    cpu: "50m"
+    memory: "128Mi"

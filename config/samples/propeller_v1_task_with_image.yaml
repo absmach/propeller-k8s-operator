@@ -1,18 +1,23 @@
+# Task sample (registry image) — runs a WASM module pulled from a container registry.
+# The proplet fetches the OCI image at runtime via the proxy, rather than receiving
+# the binary inline. Use this when your WASM module is too large to embed in the CR.
+#
+# For a full walkthrough including credential provisioning and expected output, see:
+# https://docs.propeller.abstractmachines.fr/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Task
 metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: addition-with-image-url
+  name: wasm-addition-from-registry
 spec:
-  name: addition-with-image-url
+  name: wasm-addition-from-registry
   functionName: add
+  # WASM image pulled from a container registry by the proplet at runtime
   imageUrl: "docker.io/mrstevenyaga/add.wasm:latest"
   inputs:
     - 10
     - 89
   propletSelector:
-    propletId:
-  resourceRequirements:
-    cpu:
+    propletId: "external-proplet"
