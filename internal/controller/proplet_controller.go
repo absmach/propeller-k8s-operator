@@ -42,7 +42,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var superMQBaseTopic = "m/%s/c/%s/messages"
+var superMQBaseTopic = "m/%s/c/%s"
 
 const PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
 
