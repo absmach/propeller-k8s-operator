@@ -2,7 +2,7 @@
 # Docker container or edge device) with the operator via MQTT.
 #
 # For a full walkthrough including credential provisioning and task execution, see:
-# https://docs.propeller.abstractmachines.fr/docs/examples/kubernetes-operator
+# https://propeller.absmach.eu/
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Proplet
 metadata:
