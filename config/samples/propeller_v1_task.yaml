@@ -3,7 +3,7 @@
 # executes it with Wasmtime, returning the result via MQTT to the operator.
 #
 # For a full walkthrough including credential provisioning and expected output, see:
-# https://propeller.absmach.eu/
+# https://propeller.absmach.eu/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Task
 metadata:

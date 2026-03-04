@@ -2,7 +2,7 @@
 # inside the cluster. The operator creates and manages the underlying Deployment.
 #
 # For a full walkthrough including credential provisioning and task execution, see:
-# https://propeller.absmach.eu/
+# https://propeller.absmach.eu/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Proplet
 metadata:
