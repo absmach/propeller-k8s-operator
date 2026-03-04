@@ -229,8 +229,8 @@ func init() {
 
 // stateTransitionMap defines valid task phase transitions
 var stateTransitionMap = map[TaskPhase][]TaskPhase{
-	TaskPendingPhase:     {TaskScheduledPhase, TaskFailedPhase, TaskSkippedPhase},
-	TaskScheduledPhase:   {TaskRunningPhase, TaskFailedPhase, TaskSkippedPhase},
+	TaskPendingPhase:     {TaskScheduledPhase, TaskRunningPhase, TaskCompletedPhase, TaskFailedPhase, TaskSkippedPhase},
+	TaskScheduledPhase:   {TaskRunningPhase, TaskCompletedPhase, TaskFailedPhase, TaskSkippedPhase},
 	TaskRunningPhase:     {TaskCompletedPhase, TaskFailedPhase, TaskInterruptedPhase},
 	TaskCompletedPhase:   {TaskPendingPhase}, // Allow restart for recurring tasks
 	TaskFailedPhase:      {TaskPendingPhase}, // Allow retry

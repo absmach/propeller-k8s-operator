@@ -556,6 +556,12 @@ func (r *PropletReconciler) updatePropletStatus(ctx context.Context, proplet *pr
 					return getErr
 				}
 
+				// Preserve a newer LastSeen from the fresh object (may have been set by the MQTT handler).
+				if fresh.Status.LastSeen != nil {
+					if proplet.Status.LastSeen == nil || fresh.Status.LastSeen.After(proplet.Status.LastSeen.Time) {
+						proplet.Status.LastSeen = fresh.Status.LastSeen
+					}
+				}
 				fresh.Status = proplet.Status
 				*proplet = *fresh
 
@@ -828,12 +834,27 @@ func (r *PropletReconciler) mqttResultHandler(ctx context.Context, msg map[strin
 				task.Status.FinishedAt = &now
 				task.Status.UpdatedAt = &now
 
-				if err := r.Status().Update(ctx, task); err != nil {
-					return err
+				const maxRetries = 3
+				for attempt := range maxRetries {
+					if err := r.Status().Update(ctx, task); err != nil {
+						if apierrors.IsConflict(err) && attempt < maxRetries-1 {
+							fresh := &propellerv1.Task{}
+							if getErr := r.Get(ctx, types.NamespacedName{Name: task.Name, Namespace: task.Namespace}, fresh); getErr != nil {
+								return getErr
+							}
+							fresh.Status.Phase = propellerv1.TaskCompletedPhase
+							fresh.Status.Results = task.Status.Results
+							fresh.Status.FinishedAt = task.Status.FinishedAt
+							fresh.Status.UpdatedAt = task.Status.UpdatedAt
+							*task = *fresh
+							time.Sleep(time.Millisecond * 100 * time.Duration(attempt+1))
+							continue
+						}
+						return err
+					}
+					logger.Info("Task completed with results")
+					return nil
 				}
-
-				logger.Info("Task completed with results")
-				return nil
 			}
 		}
 	}
