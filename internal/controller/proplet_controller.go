@@ -744,6 +744,13 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	now := metav1.Now()
 	proplet.Status.LastSeen = &now
 
+	// Track heartbeat history — keep the most recent 10 timestamps.
+	const aliveHistoryLimit = 10
+	proplet.Status.AliveHistory = append(proplet.Status.AliveHistory, now)
+	if len(proplet.Status.AliveHistory) > aliveHistoryLimit {
+		proplet.Status.AliveHistory = proplet.Status.AliveHistory[len(proplet.Status.AliveHistory)-aliveHistoryLimit:]
+	}
+
 	if proplet.Spec.Type == propellerv1.K8sProplet {
 		deployment := &appsv1.Deployment{}
 		deploymentName := types.NamespacedName{

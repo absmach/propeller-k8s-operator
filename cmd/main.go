@@ -42,6 +42,7 @@ import (
 	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
 	"github.com/absmach/propeller/internal/controller"
 	"github.com/absmach/propeller/internal/mqtt"
+	"github.com/absmach/propeller/internal/scheduler"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -249,7 +250,7 @@ func main() {
 	if err := (&controller.TaskReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub); err != nil {
+	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
