@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	propellerapiv1 "github.com/absmach/propeller/api/v1"
@@ -26,14 +29,27 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
 	defaultRequeueDelay = 10 * time.Second
+
+	// labelJobName tags every Task created by a PropellerJob so they can be
+	// listed efficiently without a field indexer.
+	labelJobName = "propeller.propeller.abstractmachines.fr/job"
+
+	// annotationSpecIndex records the task's position in PropellerJobSpec.Tasks
+	// (0-based).  Used by sequential mode to determine which task to create next.
+	annotationSpecIndex = "propeller.propeller.abstractmachines.fr/spec-index"
+
+	// annotationSpecName records the TaskSpec.Name value so DependsOn cross-
+	// references can be resolved to Kubernetes resource names.
+	annotationSpecName = "propeller.propeller.abstractmachines.fr/spec-name"
 )
 
-// PropellerJobReconciler reconciles a PropellerJob object
+// PropellerJobReconciler reconciles a PropellerJob object.
 type PropellerJobReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -44,7 +60,6 @@ type PropellerJobReconciler struct {
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=propellerjobs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile handles the reconciliation loop for PropellerJob resources
 func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -53,7 +68,6 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Initialize status if needed
 	if job.Status.Phase == "" {
 		job.Status.Phase = propellerapiv1.JobPhasePending
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
@@ -75,45 +89,30 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 }
 
-// handlePending starts the job execution
+// handlePending creates the initial set of Task resources and transitions the
+// job to Running.
+//
+//   - parallel:     create all tasks immediately (no ordering)
+//   - configurable: create all tasks immediately; DependsOn is resolved to K8s
+//                   names so the TaskReconciler gates execution automatically
+//   - sequential:   create only the first task (index 0); subsequent tasks are
+//                   created one at a time by handleRunning
 func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propellerapiv1.PropellerJob) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Create tasks from inline specs
-	for i, taskSpec := range job.Spec.Tasks {
-		taskName := fmt.Sprintf("%s-task-%d", job.Name, i)
-		task := &propellerapiv1.Task{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      taskName,
-				Namespace: job.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: job.APIVersion,
-						Kind:       job.Kind,
-						Name:       job.Name,
-						UID:        job.UID,
-						Controller: func() *bool {
-							b := true
-							return &b
-						}(),
-					},
-				},
-			},
-			Spec: taskSpec,
+	switch job.Spec.ExecutionMode {
+	case propellerapiv1.ExecutionModeSequential:
+		if len(job.Spec.Tasks) > 0 {
+			if err := r.createTask(ctx, job, job.Spec.Tasks[0], 0); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
-
-		// Set the JobID reference
-		task.Spec.JobID = string(job.UID)
-
-		if err := r.Create(ctx, task); err != nil {
-			if client.IgnoreAlreadyExists(err) != nil {
-				logger.Error(err, "failed to create task", "task", taskName)
+	default: // parallel and configurable
+		for i, taskSpec := range job.Spec.Tasks {
+			if err := r.createTask(ctx, job, taskSpec, i); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 	}
 
-	// Update job to Running
 	now := metav1.Now()
 	job.Status.Phase = propellerapiv1.JobPhaseRunning
 	job.Status.StartTime = &now
@@ -124,25 +123,17 @@ func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propell
 	return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
 }
 
-// handleRunning monitors the tasks and updates job status
+// handleRunning monitors owned Tasks and, for sequential mode, creates the
+// next task once the current one is terminal.
 func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propellerapiv1.PropellerJob) (ctrl.Result, error) {
-	// List owned tasks
-	taskList := &propellerapiv1.TaskList{}
-	if err := r.List(ctx, taskList, client.InNamespace(job.Namespace), client.MatchingFields{
-		"spec.jobID": string(job.UID),
-	}); err != nil {
-		// Fallback to listing all tasks and filtering
-		if err := r.List(ctx, taskList, client.InNamespace(job.Namespace)); err != nil {
-			return ctrl.Result{}, err
-		}
+	taskList, err := r.listOwnedTasks(ctx, job)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	var completed, failed, skipped int
-	for _, task := range taskList.Items {
-		if task.Spec.JobID != string(job.UID) {
-			continue
-		}
-		switch task.Status.Phase {
+	for _, t := range taskList.Items {
+		switch t.Status.Phase {
 		case propellerapiv1.TaskCompletedPhase:
 			completed++
 		case propellerapiv1.TaskFailedPhase:
@@ -156,7 +147,15 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	job.Status.FailedCount = failed
 	job.Status.SkippedCount = skipped
 
-	// Check if all tasks are done
+	// Sequential mode: create the next task when the current one is terminal.
+	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
+		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 || result.Requeue {
+			_ = r.Status().Update(ctx, job)
+			return result, err
+		}
+	}
+
+	// Check overall completion.
 	totalTasks := job.Status.TaskCount
 	finishedTasks := completed + failed + skipped
 
@@ -177,11 +176,134 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	if job.Status.Phase == propellerapiv1.JobPhaseRunning {
 		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
 	}
-
 	return ctrl.Result{}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager
+// advanceSequential creates the next task in the spec when all previously
+// created tasks have reached a terminal state.
+func (r *PropellerJobReconciler) advanceSequential(ctx context.Context, job *propellerapiv1.PropellerJob, taskList *propellerapiv1.TaskList) (ctrl.Result, error) {
+	if len(job.Spec.Tasks) == 0 {
+		return ctrl.Result{}, nil
+	}
+
+	// Find the highest spec-index already created and check if it is terminal.
+	highestIndex := -1
+	allTerminal := true
+	for _, t := range taskList.Items {
+		idxStr := t.Annotations[annotationSpecIndex]
+		idx, err := strconv.Atoi(idxStr)
+		if err != nil {
+			continue
+		}
+		if idx > highestIndex {
+			highestIndex = idx
+		}
+		if !isTerminalPhase(t.Status.Phase) {
+			allTerminal = false
+		}
+	}
+
+	if !allTerminal {
+		return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
+	}
+
+	nextIndex := highestIndex + 1
+	if nextIndex >= len(job.Spec.Tasks) {
+		return ctrl.Result{}, nil // all tasks have been created
+	}
+
+	if err := r.createTask(ctx, job, job.Spec.Tasks[nextIndex], nextIndex); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
+}
+
+// createTask creates a single Task CRD owned by the job.
+//
+// For configurable mode, DependsOn values (which reference other TaskSpec.Name
+// fields) are resolved to their Kubernetes resource names: {job-name}-{spec-name}.
+// This lets the TaskReconciler gate execution using only Kubernetes object names.
+func (r *PropellerJobReconciler) createTask(ctx context.Context, job *propellerapiv1.PropellerJob, spec propellerapiv1.TaskSpec, specIndex int) error {
+	taskName := taskKubeName(job.Name, spec.Name)
+
+	// Resolve DependsOn for configurable mode.
+	resolvedDeps := spec.DependsOn
+	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeConfigurable && len(spec.DependsOn) > 0 {
+		resolvedDeps = make([]string, len(spec.DependsOn))
+		for i, dep := range spec.DependsOn {
+			resolvedDeps[i] = taskKubeName(job.Name, dep)
+		}
+	}
+
+	resolvedSpec := spec
+	resolvedSpec.DependsOn = resolvedDeps
+	resolvedSpec.JobID = string(job.UID)
+
+	task := &propellerapiv1.Task{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      taskName,
+			Namespace: job.Namespace,
+			Labels: map[string]string{
+				labelJobName: job.Name,
+			},
+			Annotations: map[string]string{
+				annotationSpecIndex: strconv.Itoa(specIndex),
+				annotationSpecName:  spec.Name,
+			},
+		},
+		Spec: resolvedSpec,
+	}
+
+	if err := controllerutil.SetControllerReference(job, task, r.Scheme); err != nil {
+		return err
+	}
+
+	if err := r.Create(ctx, task); client.IgnoreAlreadyExists(err) != nil {
+		log.FromContext(context.Background()).Error(err, "failed to create task", "task", taskName)
+		return err
+	}
+	return nil
+}
+
+// listOwnedTasks returns all Tasks carrying the job's ownership label, sorted
+// by their spec-index annotation so sequential logic sees a deterministic order.
+func (r *PropellerJobReconciler) listOwnedTasks(ctx context.Context, job *propellerapiv1.PropellerJob) (*propellerapiv1.TaskList, error) {
+	taskList := &propellerapiv1.TaskList{}
+	if err := r.List(ctx, taskList,
+		client.InNamespace(job.Namespace),
+		client.MatchingLabels{labelJobName: job.Name},
+	); err != nil {
+		return nil, err
+	}
+
+	sort.Slice(taskList.Items, func(i, j int) bool {
+		a, _ := strconv.Atoi(taskList.Items[i].Annotations[annotationSpecIndex])
+		b, _ := strconv.Atoi(taskList.Items[j].Annotations[annotationSpecIndex])
+		return a < b
+	})
+	return taskList, nil
+}
+
+// taskKubeName converts a job name and a spec-level task name to a Kubernetes
+// resource name that is safe to use in DependsOn references.
+func taskKubeName(jobName, specName string) string {
+	// Replace underscores/spaces with hyphens to satisfy Kubernetes naming rules.
+	safe := strings.NewReplacer("_", "-", " ", "-").Replace(specName)
+	return fmt.Sprintf("%s-%s", jobName, safe)
+}
+
+func isTerminalPhase(phase propellerapiv1.TaskPhase) bool {
+	switch phase {
+	case propellerapiv1.TaskCompletedPhase,
+		propellerapiv1.TaskFailedPhase,
+		propellerapiv1.TaskSkippedPhase,
+		propellerapiv1.TaskInterruptedPhase:
+		return true
+	}
+	return false
+}
+
+// SetupWithManager sets up the controller with the Manager.
 func (r *PropellerJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerapiv1.PropellerJob{}).
