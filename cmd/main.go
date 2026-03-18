@@ -227,17 +227,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	mqttPubSub, err := mqtt.NewPubSub(
-		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
-	)
-	if err != nil {
-		setupLog.Error(err, "failed to initialize mqtt pubsub")
-		os.Exit(1)
-	}
-
-	if mqttPubSub == nil || domainID == "" || channelID == "" {
-		setupLog.Error(nil, "MQTT connection is required: pubsub, domainID, and channelID must be configured")
-		os.Exit(1)
+	var mqttPubSub mqtt.PubSub
+	if mqttAddress != "" {
+		mqttPubSub, err = mqtt.NewPubSub(
+			mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+		)
+		if err != nil {
+			setupLog.Error(err, "failed to initialize mqtt pubsub")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("MQTT not configured; external proplet dispatch and liveness tracking disabled")
 	}
 
 	if err := (&controller.PropletReconciler{

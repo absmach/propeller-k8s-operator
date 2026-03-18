@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"sync"
 	"time"
 
@@ -543,42 +542,6 @@ func (r *PropletReconciler) updateTaskCount(ctx context.Context, proplet *propel
 	return nil
 }
 
-func (r *PropletReconciler) propletMatchesTaskSelector(proplet *propellerv1.Proplet, task *propellerv1.Task) bool {
-	if task.Spec.PropletSelector == nil {
-		return true
-	}
-	sel := task.Spec.PropletSelector
-	if sel.PropletID != "" && sel.PropletID != proplet.Name {
-		return false
-	}
-	if task.Spec.PreferredPropletType != propellerv1.AnyProplet {
-		if task.Spec.PreferredPropletType != proplet.Spec.Type {
-			return false
-		}
-	}
-	for k, v := range sel.MatchLabels {
-		if proplet.Labels == nil || proplet.Labels[k] != v {
-			return false
-		}
-	}
-	if proplet.Spec.Type == propellerv1.ExternalProplet && proplet.Spec.External != nil {
-		if len(sel.MatchDeviceTypes) > 0 && !slices.Contains(sel.MatchDeviceTypes, proplet.Spec.External.DeviceType) {
-			return false
-		}
-		if len(sel.MatchCapabilities) > 0 {
-			caps := make(map[string]bool, len(proplet.Spec.External.Capabilities))
-			for _, c := range proplet.Spec.External.Capabilities {
-				caps[c] = true
-			}
-			for _, req := range sel.MatchCapabilities {
-				if !caps[req] {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
 
 // mqttLivenessHandler is invoked by the MQTT goroutine for every heartbeat
 // message on the /control/proplet/alive topic.  It must not write to the
@@ -626,13 +589,15 @@ func (r *PropletReconciler) SetupWithManager(
 
 	// Subscribe only to the liveness topic; task result topics are handled by
 	// TaskReconciler to respect separation of responsibilities.
-	if err := r.pubsub.Subscribe(
-		r.baseTopic+"/control/proplet/alive",
-		func(_ string, msg map[string]any) error {
-			return r.mqttLivenessHandler(context.Background(), msg)
-		},
-	); err != nil {
-		return err
+	if r.pubsub != nil {
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/alive",
+			func(_ string, msg map[string]any) error {
+				return r.mqttLivenessHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

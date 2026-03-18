@@ -249,6 +249,10 @@ func (r *TaskReconciler) selectProplet(ctx context.Context, task *propellerapiv1
 		return task.Spec.PropletSelector.PropletID, nil
 	}
 
+	if r.sched == nil {
+		return "", fmt.Errorf("no scheduler configured")
+	}
+
 	propletList := &propellerapiv1.PropletList{}
 	if err := r.List(ctx, propletList, client.InNamespace(task.Namespace)); err != nil {
 		return "", err
@@ -728,21 +732,23 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 
 	// Subscribe to proplet result and status topics; task lifecycle topics are
 	// separate from proplet liveness (handled by PropletReconciler).
-	if err := r.pubsub.Subscribe(
-		r.baseTopic+"/control/proplet/results",
-		func(_ string, msg map[string]any) error {
-			return r.mqttResultHandler(context.Background(), msg)
-		},
-	); err != nil {
-		return err
-	}
-	if err := r.pubsub.Subscribe(
-		r.baseTopic+"/control/proplet/status",
-		func(_ string, msg map[string]any) error {
-			return r.mqttStatusHandler(context.Background(), msg)
-		},
-	); err != nil {
-		return err
+	if r.pubsub != nil {
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/results",
+			func(_ string, msg map[string]any) error {
+				return r.mqttResultHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/status",
+			func(_ string, msg map[string]any) error {
+				return r.mqttStatusHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

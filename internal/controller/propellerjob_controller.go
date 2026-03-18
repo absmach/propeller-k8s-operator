@@ -94,9 +94,9 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 //
 //   - parallel:     create all tasks immediately (no ordering)
 //   - configurable: create all tasks immediately; DependsOn is resolved to K8s
-//                   names so the TaskReconciler gates execution automatically
+//     names so the TaskReconciler gates execution automatically
 //   - sequential:   create only the first task (index 0); subsequent tasks are
-//                   created one at a time by handleRunning
+//     created one at a time by handleRunning
 func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propellerapiv1.PropellerJob) (ctrl.Result, error) {
 	switch job.Spec.ExecutionMode {
 	case propellerapiv1.ExecutionModeSequential:
@@ -149,7 +149,7 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 
 	// Sequential mode: create the next task when the current one is terminal.
 	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
-		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 || result.Requeue {
+		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 {
 			_ = r.Status().Update(ctx, job)
 			return result, err
 		}
