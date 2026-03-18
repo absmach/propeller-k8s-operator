@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	propellerapiv1 "github.com/absmach/propeller/api/v1"
@@ -28,20 +29,33 @@ import (
 	"github.com/absmach/propeller/internal/scheduler"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-const (
-	defaultDepCheckInterval = 15 * time.Second
-)
+// indexDependsOn is the field index key for Task.Spec.DependsOn.
+const indexDependsOn = "spec.dependsOn"
+
+// mqttTaskUpdate carries the payload from an MQTT result or status message
+// delivered by a proplet.  It is stored in pendingResults by the MQTT goroutine
+// and consumed (LoadAndDelete) inside Reconcile so that all API writes remain
+// within the reconcile loop.
+type mqttTaskUpdate struct {
+	phase  propellerapiv1.TaskPhase
+	result json.RawMessage
+	errMsg string
+}
 
 // TaskReconciler reconciles a Task object.
 type TaskReconciler struct {
@@ -53,6 +67,16 @@ type TaskReconciler struct {
 	domainID  string
 	channelID string
 	baseTopic string
+
+	// taskEvents bridges MQTT goroutines to the reconcile queue.
+	// The MQTT result/status handlers write a GenericEvent here; the
+	// WatchesRawSource below forwards it to the work queue so that all
+	// API writes stay inside Reconcile.
+	taskEvents chan event.GenericEvent
+
+	// pendingResults stores MQTT-delivered task updates keyed by string(task.UID).
+	// Written by MQTT handlers, consumed (LoadAndDelete) inside Reconcile.
+	pendingResults sync.Map
 }
 
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -70,6 +94,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	task := &propellerapiv1.Task{}
 	if err := r.Get(ctx, req.NamespacedName, task); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// Consume any MQTT update (result/status) that arrived from a proplet since
+	// the last reconcile.  If one is present, persist the new phase and return;
+	// the status-change event will trigger the next reconcile to process it.
+	if updated := r.applyMQTTUpdate(task); updated {
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
 
 	if task.Status.Phase == "" {
@@ -97,9 +131,51 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 }
 
+// applyMQTTUpdate checks pendingResults for an update stored by an MQTT
+// handler and, if present, applies it to the in-memory task object.
+// Returns true when an update was applied; the caller must then persist
+// the change via Status().Update().
+func (r *TaskReconciler) applyMQTTUpdate(task *propellerapiv1.Task) bool {
+	raw, ok := r.pendingResults.LoadAndDelete(string(task.UID))
+	if !ok {
+		return false
+	}
+	update := raw.(mqttTaskUpdate)
+	if update.phase == "" {
+		return false
+	}
+	if !propellerapiv1.ValidStateTransition(task.Status.Phase, update.phase) {
+		return false
+	}
+	now := metav1.Now()
+	task.Status.Phase = update.phase
+	task.Status.FinishedAt = &now
+	if update.errMsg != "" {
+		task.Status.Error = update.errMsg
+	}
+	if update.result != nil {
+		task.Status.Results = &apiextensionsv1.JSON{Raw: update.result}
+	}
+	condStatus := metav1.ConditionTrue
+	condReason := "Completed"
+	condMsg := "Task completed successfully"
+	if update.phase == propellerapiv1.TaskFailedPhase {
+		condStatus = metav1.ConditionFalse
+		condReason = "Failed"
+		condMsg = update.errMsg
+		if condMsg == "" {
+			condMsg = "task failed"
+		}
+	}
+	r.updateCondition(task, propellerapiv1.CompletedType, condStatus, condReason, condMsg)
+	return true
+}
+
 // handlePending checks dependencies, selects a proplet, and dispatches the task.
 func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
 	// Dependency gate: wait until all declared dependencies are terminal.
+	// No requeue is issued here — the Watches(Task, enqueueDependents) watch
+	// will trigger reconcile when a dependency reaches a terminal phase.
 	if len(task.Spec.DependsOn) > 0 {
 		allDone, skip, err := r.evaluateDeps(ctx, task)
 		if err != nil {
@@ -109,7 +185,7 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 			return r.transitionToSkipped(ctx, task, "run_if condition not met after dependencies completed")
 		}
 		if !allDone {
-			return ctrl.Result{RequeueAfter: defaultDepCheckInterval}, nil
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -186,14 +262,14 @@ func (r *TaskReconciler) selectProplet(ctx context.Context, task *propellerapiv1
 }
 
 func (r *TaskReconciler) handleRunning(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
-	// Only K8s-Job-backed tasks need active polling; external tasks complete via
-	// the MQTT result handler in PropletReconciler.
+	// K8s-Job-backed tasks: Owns(&batchv1.Job{}) drives change-triggered reconcile.
+	// A safety requeue is kept at a long interval to catch edge cases.
 	jobName := task.Name + "-job"
 	job := &batchv1.Job{}
 	if err := r.Get(ctx, client.ObjectKey{Name: jobName, Namespace: task.Namespace}, job); err != nil {
 		if apierrors.IsNotFound(err) {
-			// External task: no job present, wait for MQTT completion.
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			// External task: completion arrives via MQTT result event (no polling).
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -205,7 +281,8 @@ func (r *TaskReconciler) handleRunning(ctx context.Context, task *propellerapiv1
 		return r.handleJobFailed(ctx, task, job)
 	}
 
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	// Safety requeue — Owns() will normally drive this earlier.
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 // handleTerminal handles completed/failed tasks that have IsRecurring set.
@@ -350,7 +427,7 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
@@ -425,7 +502,9 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	// Completion arrives via MQTT result event (mqttResultHandler → taskEvents).
+	// No polling requeue needed.
+	return ctrl.Result{}, nil
 }
 
 func (r *TaskReconciler) handleJobSucceeded(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
@@ -512,6 +591,119 @@ func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionTyp
 	task.Status.Conditions = append(task.Status.Conditions, cond)
 }
 
+// mqttResultHandler is called by the MQTT goroutine when a proplet publishes
+// a result on /control/proplet/results.  It must not write to the Kubernetes
+// API.  Instead it stores the update and enqueues a GenericEvent.
+func (r *TaskReconciler) mqttResultHandler(ctx context.Context, msg map[string]any) error {
+	taskUID, ok := msg["id"].(string)
+	if !ok || taskUID == "" {
+		return nil
+	}
+
+	update := mqttTaskUpdate{phase: propellerapiv1.TaskCompletedPhase}
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
+		update.phase = propellerapiv1.TaskFailedPhase
+		update.errMsg = errMsg
+	}
+	if results, ok := msg["results"]; ok && results != nil {
+		if raw, err := json.Marshal(results); err == nil {
+			update.result = raw
+		}
+	}
+
+	return r.enqueueTaskByUID(ctx, taskUID, update)
+}
+
+// mqttStatusHandler is called by the MQTT goroutine when a proplet publishes
+// a status update on /control/proplet/status.  It must not write to the
+// Kubernetes API.
+func (r *TaskReconciler) mqttStatusHandler(ctx context.Context, msg map[string]any) error {
+	taskUID, ok := msg["id"].(string)
+	if !ok || taskUID == "" {
+		return nil
+	}
+
+	statusStr, ok := msg["status"].(string)
+	if !ok || statusStr == "" {
+		return nil
+	}
+
+	phase := propellerapiv1.TaskPhase(statusStr)
+	switch phase {
+	case propellerapiv1.TaskRunningPhase,
+		propellerapiv1.TaskCompletedPhase,
+		propellerapiv1.TaskFailedPhase,
+		propellerapiv1.TaskInterruptedPhase:
+	default:
+		return nil
+	}
+
+	update := mqttTaskUpdate{phase: phase}
+	if errMsg, ok := msg["error"].(string); ok {
+		update.errMsg = errMsg
+	}
+
+	return r.enqueueTaskByUID(ctx, taskUID, update)
+}
+
+// enqueueTaskByUID finds the Task with the given UID, stores the update in
+// pendingResults, and sends a GenericEvent to the taskEvents channel so the
+// reconcile loop picks it up.
+func (r *TaskReconciler) enqueueTaskByUID(ctx context.Context, taskUID string, update mqttTaskUpdate) error {
+	var tasks propellerapiv1.TaskList
+	if err := r.List(ctx, &tasks); err != nil {
+		return err
+	}
+
+	for i := range tasks.Items {
+		if string(tasks.Items[i].UID) != taskUID {
+			continue
+		}
+		t := &tasks.Items[i]
+		r.pendingResults.Store(taskUID, update)
+		select {
+		case r.taskEvents <- event.GenericEvent{Object: t}:
+		default:
+			// Channel full; periodic reconcile will drain the pending update.
+		}
+		return nil
+	}
+	return nil
+}
+
+// enqueueDependents is the MapFunc for the Watches(Task, ...) watch.  When a
+// Task reaches a terminal phase, it fans out reconcile requests to all pending
+// Tasks that list it in their DependsOn.  The field indexer on spec.dependsOn
+// makes this lookup O(log n) rather than a full table scan.
+func (r *TaskReconciler) enqueueDependents(ctx context.Context, obj client.Object) []reconcile.Request {
+	changedTask, ok := obj.(*propellerapiv1.Task)
+	if !ok {
+		return nil
+	}
+	if !isTerminalPhase(changedTask.Status.Phase) {
+		return nil
+	}
+
+	var dependents propellerapiv1.TaskList
+	if err := r.List(ctx, &dependents,
+		client.InNamespace(changedTask.Namespace),
+		client.MatchingFields{indexDependsOn: changedTask.Name},
+	); err != nil {
+		log.FromContext(ctx).Error(err, "enqueueDependents: failed to list dependents", "task", changedTask.Name)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(dependents.Items))
+	for _, t := range dependents.Items {
+		if t.Status.Phase == propellerapiv1.TaskPendingPhase {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: t.Name, Namespace: t.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
 	r.pubsub = pubsub
@@ -519,9 +711,51 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 	r.domainID = domainID
 	r.channelID = channelID
 	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+	r.taskEvents = make(chan event.GenericEvent, 256)
+
+	// Register a field index on spec.dependsOn so enqueueDependents can use
+	// MatchingFields for an efficient lookup instead of a full table scan.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&propellerapiv1.Task{},
+		indexDependsOn,
+		func(obj client.Object) []string {
+			return obj.(*propellerapiv1.Task).Spec.DependsOn
+		},
+	); err != nil {
+		return fmt.Errorf("failed to register %s field index: %w", indexDependsOn, err)
+	}
+
+	// Subscribe to proplet result and status topics; task lifecycle topics are
+	// separate from proplet liveness (handled by PropletReconciler).
+	if err := r.pubsub.Subscribe(
+		r.baseTopic+"/control/proplet/results",
+		func(_ string, msg map[string]any) error {
+			return r.mqttResultHandler(context.Background(), msg)
+		},
+	); err != nil {
+		return err
+	}
+	if err := r.pubsub.Subscribe(
+		r.baseTopic+"/control/proplet/status",
+		func(_ string, msg map[string]any) error {
+			return r.mqttStatusHandler(context.Background(), msg)
+		},
+	); err != nil {
+		return err
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerapiv1.Task{}).
+		// When a owned Job changes state (e.g., pod succeeds), re-reconcile the task.
 		Owns(&batchv1.Job{}).
+		// When any Task becomes terminal, fan out to all tasks that depend on it.
+		Watches(
+			&propellerapiv1.Task{},
+			handler.EnqueueRequestsFromMapFunc(r.enqueueDependents),
+		).
+		// MQTT result/status events enter the reconcile queue via this channel
+		// rather than through direct API writes from the MQTT goroutine.
+		WatchesRawSource(source.Channel(r.taskEvents, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }
