@@ -61,8 +61,6 @@ const (
 	TaskModeInfer TaskMode = "infer"
 	TaskModeTrain TaskMode = "train"
 
-	RunIfSuccess = "success"
-	RunIfFailure = "failure"
 )
 
 type PropletSelector struct {
@@ -94,16 +92,20 @@ type TaskSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	FunctionName string `json:"functionName"`
+	// FunctionName is the name of the WASM function to invoke. Optional; if
+	// omitted the proplet uses the task Name as the function identifier, which
+	// is the behaviour of the main propeller manager.
+	FunctionName string `json:"functionName,omitempty"`
 	// +kubebuilder:validation:Enum=standard;federated
 	// +kubebuilder:default="standard"
 	Kind            TaskKind         `json:"kind,omitempty"`
 	ImageURL        string           `json:"imageUrl,omitempty"`
 	File            []byte           `json:"file,omitempty"`
-	CLIArgs         []string         `json:"cliArgs,omitempty"`
-	Inputs          []uint64         `json:"inputs,omitempty"`
+	CLIArgs []string `json:"cliArgs,omitempty"`
+	// Inputs are task input arguments. Each element is a string but numeric
+	// values are accepted and coerced — matching the FlexStrings behaviour of
+	// the main propeller manager.
+	Inputs []string `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	// +kubebuilder:default="any"
@@ -190,7 +192,7 @@ type TaskStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Function",type=string,JSONPath=`.spec.functionName`
+// +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
 // +kubebuilder:printcolumn:name="Proplet",type=string,JSONPath=`.status.assignedProplet`
 // +kubebuilder:printcolumn:name="Start Time",type=date,JSONPath=`.status.startedAt`
 // +kubebuilder:printcolumn:name="Finish Time",type=date,JSONPath=`.status.finishedAt`

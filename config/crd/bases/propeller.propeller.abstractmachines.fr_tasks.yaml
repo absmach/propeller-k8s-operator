@@ -18,8 +18,8 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .spec.functionName
-      name: Function
+    - jsonPath: .spec.mode
+      name: Mode
       type: string
     - jsonPath: .status.assignedProplet
       name: Proplet
@@ -85,14 +85,20 @@ spec:
                 format: byte
                 type: string
               functionName:
-                minLength: 1
+                description: |-
+                  FunctionName is the name of the WASM function to invoke. Optional; if
+                  omitted the proplet uses the task Name as the function identifier, which
+                  is the behaviour of the main propeller manager.
                 type: string
               imageUrl:
                 type: string
               inputs:
+                description: |-
+                  Inputs are task input arguments. Each element is a string but numeric
+                  values are accepted and coerced — matching the FlexStrings behaviour of
+                  the main propeller manager.
                 items:
-                  format: int64
-                  type: integer
+                  type: string
                 type: array
               isRecurring:
                 description: IsRecurring indicates if the task should repeat after
@@ -225,7 +231,6 @@ spec:
                 description: WorkflowID groups tasks into a workflow for DAG execution
                 type: string
             required:
-            - functionName
             - name
             type: object
           status:

@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -99,8 +100,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Consume any MQTT update (result/status) that arrived from a proplet since
 	// the last reconcile.  If one is present, persist the new phase and return;
 	// the status-change event will trigger the next reconcile to process it.
-	if updated := r.applyMQTTUpdate(task); updated {
+	if update, updated := r.applyMQTTUpdate(task); updated {
 		if err := r.Status().Update(ctx, task); err != nil {
+			// Put the update back so the next reconcile can retry persisting it.
+			r.pendingResults.Store(string(task.UID), update)
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -133,23 +136,30 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // applyMQTTUpdate checks pendingResults for an update stored by an MQTT
 // handler and, if present, applies it to the in-memory task object.
-// Returns true when an update was applied; the caller must then persist
-// the change via Status().Update().
-func (r *TaskReconciler) applyMQTTUpdate(task *propellerapiv1.Task) bool {
+// Returns the update and true when an update was applied; the caller must
+// then persist the change via Status().Update().  On failure, the caller
+// should re-store the returned update so it is not permanently lost.
+func (r *TaskReconciler) applyMQTTUpdate(task *propellerapiv1.Task) (mqttTaskUpdate, bool) {
 	raw, ok := r.pendingResults.LoadAndDelete(string(task.UID))
 	if !ok {
-		return false
+		return mqttTaskUpdate{}, false
 	}
 	update := raw.(mqttTaskUpdate)
 	if update.phase == "" {
-		return false
+		return mqttTaskUpdate{}, false
 	}
 	if !propellerapiv1.ValidStateTransition(task.Status.Phase, update.phase) {
-		return false
+		return mqttTaskUpdate{}, false
 	}
 	now := metav1.Now()
 	task.Status.Phase = update.phase
-	task.Status.FinishedAt = &now
+	// Only terminal phases represent actual completion; intermediate phases
+	// (e.g. Running) must not overwrite FinishedAt.
+	if update.phase == propellerapiv1.TaskCompletedPhase ||
+		update.phase == propellerapiv1.TaskFailedPhase ||
+		update.phase == propellerapiv1.TaskInterruptedPhase {
+		task.Status.FinishedAt = &now
+	}
 	if update.errMsg != "" {
 		task.Status.Error = update.errMsg
 	}
@@ -168,7 +178,7 @@ func (r *TaskReconciler) applyMQTTUpdate(task *propellerapiv1.Task) bool {
 		}
 	}
 	r.updateCondition(task, propellerapiv1.CompletedType, condStatus, condReason, condMsg)
-	return true
+	return update, true
 }
 
 // handlePending checks dependencies, selects a proplet, and dispatches the task.
@@ -242,11 +252,20 @@ func (r *TaskReconciler) evaluateDeps(ctx context.Context, task *propellerapiv1.
 }
 
 // selectProplet resolves which proplet should execute the task.
-// It honours an explicit PropletSelector.PropletID when set, otherwise it
-// delegates to the round-robin scheduler across running proplets.
+// It honours an explicit PropletSelector.PropletID when set (but still
+// verifies the proplet is alive), otherwise it delegates to the round-robin
+// scheduler across running proplets.
 func (r *TaskReconciler) selectProplet(ctx context.Context, task *propellerapiv1.Task) (string, error) {
 	if task.Spec.PropletSelector != nil && task.Spec.PropletSelector.PropletID != "" {
-		return task.Spec.PropletSelector.PropletID, nil
+		pinned := task.Spec.PropletSelector.PropletID
+		proplet := &propellerapiv1.Proplet{}
+		if err := r.Get(ctx, client.ObjectKey{Name: pinned, Namespace: task.Namespace}, proplet); err != nil {
+			return "", fmt.Errorf("pinned proplet %q not found: %w", pinned, err)
+		}
+		if proplet.Status.Phase != propellerapiv1.PropletRunningPhase {
+			return "", fmt.Errorf("pinned proplet %q is not running (phase: %s)", pinned, proplet.Status.Phase)
+		}
+		return pinned, nil
 	}
 
 	if r.sched == nil {
@@ -344,15 +363,6 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
 			Namespace: task.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: task.APIVersion,
-					Kind:       task.Kind,
-					Name:       task.Name,
-					UID:        task.UID,
-					Controller: func() *bool { b := true; return &b }(),
-				},
-			},
 		},
 		Data: task.Spec.Env,
 	}
@@ -362,8 +372,26 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 		}
 		configMap.Data["wasm_file_provided"] = "true"
 	}
+	// SetControllerReference resolves GVK from the scheme — task.TypeMeta is
+	// empty for objects returned by client.Get so manual OwnerReference
+	// construction would produce invalid (empty APIVersion/Kind) entries.
+	if err := controllerutil.SetControllerReference(task, configMap, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.Create(ctx, configMap); client.IgnoreAlreadyExists(err) != nil {
 		return ctrl.Result{}, err
+	}
+
+	resReqs, err := r.buildResourceRequirements(task.Spec.ResourceRequirements)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid resource requirements: %w", err)
+	}
+
+	restartPolicy := corev1.RestartPolicyOnFailure
+	if task.Spec.RestartPolicy != "" {
+		restartPolicy = task.Spec.RestartPolicy
+	} else if task.Spec.Daemon {
+		restartPolicy = corev1.RestartPolicyAlways
 	}
 
 	jobName := task.Name + "-job"
@@ -371,28 +399,11 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: task.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: task.APIVersion,
-					Kind:       task.Kind,
-					Name:       task.Name,
-					UID:        task.UID,
-					Controller: func() *bool { b := true; return &b }(),
-				},
-			},
 		},
 		Spec: batchv1.JobSpec{
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
-					RestartPolicy: func() corev1.RestartPolicy {
-						if task.Spec.RestartPolicy != "" {
-							return task.Spec.RestartPolicy
-						}
-						if task.Spec.Daemon {
-							return corev1.RestartPolicyAlways
-						}
-						return corev1.RestartPolicyOnFailure
-					}(),
+					RestartPolicy: restartPolicy,
 					Containers: []corev1.Container{
 						{
 							Name:  "task",
@@ -409,15 +420,18 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 								{Name: "PROPLET_ID", Value: propletID},
 								{Name: "TASK_ID", Value: string(task.UID)},
 							},
-							Resources: r.buildResourceRequirements(task.Spec.ResourceRequirements),
+							Resources: resReqs,
 						},
 					},
 				},
 			},
 		},
 	}
+	if err := controllerutil.SetControllerReference(task, job, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	if err := r.Create(ctx, job); err != nil {
+	if err := r.Create(ctx, job); client.IgnoreAlreadyExists(err) != nil {
 		logger.Error(err, "failed to create job", "job", jobName)
 		return ctrl.Result{}, err
 	}
@@ -456,9 +470,23 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 	env["PROPLET_ID"] = propletID
 	env["TASK_ID"] = string(task.UID)
 
+	// scheduledState matches task.Scheduled (=1) in the main propeller's
+	// numeric task.State enum.  Sending "state" aligns with publishStart in
+	// the manager so proplets can validate the expected state transition.
+	const scheduledState = 1
+
+	// The proplet uses the "name" field as the WASM function name (service.rs:575).
+	// Use FunctionName when set; fall back to the task Name so the field is
+	// never empty (proplet rejects requests with an empty name).
+	funcName := task.Spec.FunctionName
+	if funcName == "" {
+		funcName = task.Name
+	}
+
 	payload := map[string]any{
 		"id":                string(task.UID),
-		"name":              task.Name,
+		"name":              funcName,
+		"state":             scheduledState,
 		"kind":              task.Spec.Kind,
 		"image_url":         task.Spec.ImageURL,
 		"file":              task.Spec.File,
@@ -475,6 +503,9 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 
 	if task.Spec.MonitoringProfile != nil {
 		mp := task.Spec.MonitoringProfile
+		// Key must be "monitoringProfile" — the Rust proplet uses
+		// #[serde(rename = "monitoringProfile")] on the StartRequest field.
+		// Interval is serialised as u64 seconds by the proplet's serde_duration module.
 		profile := map[string]any{
 			"enabled":                  mp.Enabled,
 			"collect_cpu":              mp.CollectCPU,
@@ -487,9 +518,9 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 			"history_size":             mp.HistorySize,
 		}
 		if mp.Interval != nil {
-			profile["interval"] = mp.Interval.Duration.String()
+			profile["interval"] = uint64(mp.Interval.Duration.Seconds())
 		}
-		payload["monitoring_profile"] = profile
+		payload["monitoringProfile"] = profile
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {
@@ -554,24 +585,34 @@ func (r *TaskReconciler) extractAndStoreResult(ctx context.Context, task *propel
 	}
 }
 
-func (r *TaskReconciler) buildResourceRequirements(req *propellerapiv1.PropletResources) corev1.ResourceRequirements {
+// buildResourceRequirements converts PropletResources to a corev1.ResourceRequirements.
+// Returns an error for invalid quantity strings rather than panicking.
+func (r *TaskReconciler) buildResourceRequirements(req *propellerapiv1.PropletResources) (corev1.ResourceRequirements, error) {
 	if req == nil {
-		return corev1.ResourceRequirements{}
+		return corev1.ResourceRequirements{}, nil
 	}
 	reqs := corev1.ResourceRequirements{}
 	if req.CPU != "" {
-		reqs.Requests = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(req.CPU)}
-		reqs.Limits = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(req.CPU)}
+		q, err := resource.ParseQuantity(req.CPU)
+		if err != nil {
+			return corev1.ResourceRequirements{}, fmt.Errorf("invalid CPU quantity %q: %w", req.CPU, err)
+		}
+		reqs.Requests = corev1.ResourceList{corev1.ResourceCPU: q}
+		reqs.Limits = corev1.ResourceList{corev1.ResourceCPU: q}
 	}
 	if req.Memory != "" {
+		q, err := resource.ParseQuantity(req.Memory)
+		if err != nil {
+			return corev1.ResourceRequirements{}, fmt.Errorf("invalid Memory quantity %q: %w", req.Memory, err)
+		}
 		if reqs.Requests == nil {
 			reqs.Requests = corev1.ResourceList{}
 			reqs.Limits = corev1.ResourceList{}
 		}
-		reqs.Requests[corev1.ResourceMemory] = resource.MustParse(req.Memory)
-		reqs.Limits[corev1.ResourceMemory] = resource.MustParse(req.Memory)
+		reqs.Requests[corev1.ResourceMemory] = q
+		reqs.Limits[corev1.ResourceMemory] = q
 	}
-	return reqs
+	return reqs, nil
 }
 
 func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionType propellerapiv1.TaskConditionType, status metav1.ConditionStatus, reason, message string) {
@@ -598,8 +639,11 @@ func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionTyp
 // mqttResultHandler is called by the MQTT goroutine when a proplet publishes
 // a result on /control/proplet/results.  It must not write to the Kubernetes
 // API.  Instead it stores the update and enqueues a GenericEvent.
+//
+// The proplet (and main propeller manager) uses "task_id" as the key in the
+// result payload — this matches the key used by the manager's updateResultsHandler.
 func (r *TaskReconciler) mqttResultHandler(ctx context.Context, msg map[string]any) error {
-	taskUID, ok := msg["id"].(string)
+	taskUID, ok := msg["task_id"].(string)
 	if !ok || taskUID == "" {
 		return nil
 	}
@@ -609,42 +653,14 @@ func (r *TaskReconciler) mqttResultHandler(ctx context.Context, msg map[string]a
 		update.phase = propellerapiv1.TaskFailedPhase
 		update.errMsg = errMsg
 	}
-	if results, ok := msg["results"]; ok && results != nil {
+	// The proplet's ResultMessage.results is a plain string (e.g. "30"), not a
+	// JSON object.  json.Unmarshal on the MQTT payload produces a Go string here.
+	// Marshalling it again would double-encode it ("\"30\""); instead, wrap the
+	// string as a JSON string literal directly.
+	if results, ok := msg["results"].(string); ok && results != "" {
 		if raw, err := json.Marshal(results); err == nil {
 			update.result = raw
 		}
-	}
-
-	return r.enqueueTaskByUID(ctx, taskUID, update)
-}
-
-// mqttStatusHandler is called by the MQTT goroutine when a proplet publishes
-// a status update on /control/proplet/status.  It must not write to the
-// Kubernetes API.
-func (r *TaskReconciler) mqttStatusHandler(ctx context.Context, msg map[string]any) error {
-	taskUID, ok := msg["id"].(string)
-	if !ok || taskUID == "" {
-		return nil
-	}
-
-	statusStr, ok := msg["status"].(string)
-	if !ok || statusStr == "" {
-		return nil
-	}
-
-	phase := propellerapiv1.TaskPhase(statusStr)
-	switch phase {
-	case propellerapiv1.TaskRunningPhase,
-		propellerapiv1.TaskCompletedPhase,
-		propellerapiv1.TaskFailedPhase,
-		propellerapiv1.TaskInterruptedPhase:
-	default:
-		return nil
-	}
-
-	update := mqttTaskUpdate{phase: phase}
-	if errMsg, ok := msg["error"].(string); ok {
-		update.errMsg = errMsg
 	}
 
 	return r.enqueueTaskByUID(ctx, taskUID, update)
@@ -733,18 +749,13 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 	// Subscribe to proplet result and status topics; task lifecycle topics are
 	// separate from proplet liveness (handled by PropletReconciler).
 	if r.pubsub != nil {
+		// The proplet publishes task results on /control/proplet/results.
+		// There is no /control/proplet/status topic in the proplet implementation;
+		// the mqttStatusHandler is kept for completeness but not subscribed.
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/results",
 			func(_ string, msg map[string]any) error {
 				return r.mqttResultHandler(context.Background(), msg)
-			},
-		); err != nil {
-			return err
-		}
-		if err := r.pubsub.Subscribe(
-			r.baseTopic+"/control/proplet/status",
-			func(_ string, msg map[string]any) error {
-				return r.mqttStatusHandler(context.Background(), msg)
 			},
 		); err != nil {
 			return err

@@ -533,7 +533,7 @@ func (in *TaskSpec) DeepCopyInto(out *TaskSpec) {
 	}
 	if in.Inputs != nil {
 		in, out := &in.Inputs, &out.Inputs
-		*out = make([]uint64, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 	if in.PropletSelector != nil {

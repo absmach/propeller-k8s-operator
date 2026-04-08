@@ -529,7 +529,9 @@ func (r *PropletReconciler) updateTaskCount(ctx context.Context, proplet *propel
 			continue
 		}
 		total++
-		if task.Status.Phase != propellerv1.TaskCompletedPhase && task.Status.Phase != propellerv1.TaskFailedPhase {
+		// Only non-terminal phases count as active; Skipped and Interrupted
+		// are terminal and must not inflate the active-task counter.
+		if !isTerminalPhase(task.Status.Phase) {
 			active++
 		}
 	}

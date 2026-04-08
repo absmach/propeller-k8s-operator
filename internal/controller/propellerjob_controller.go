@@ -70,6 +70,10 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if job.Status.Phase == "" {
 		job.Status.Phase = propellerapiv1.JobPhasePending
+		// TaskCount includes both inline Tasks (created by this controller) and
+		// TaskRefs (pre-existing external tasks that this job monitors but does
+		// not create).  Including TaskRefs ensures a TaskRefs-only job does not
+		// immediately complete with 0/0 when it enters Running.
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
 		if err := r.Status().Update(ctx, job); err != nil {
 			return ctrl.Result{}, err
@@ -143,6 +147,22 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 		}
 	}
 
+	// Also tally terminal TaskRefs (pre-existing tasks monitored but not owned).
+	for _, refName := range job.Spec.TaskRefs {
+		ref := &propellerapiv1.Task{}
+		if err := r.Get(ctx, client.ObjectKey{Name: refName, Namespace: job.Namespace}, ref); err != nil {
+			continue // not yet created or not found — still pending
+		}
+		switch ref.Status.Phase {
+		case propellerapiv1.TaskCompletedPhase:
+			completed++
+		case propellerapiv1.TaskFailedPhase:
+			failed++
+		case propellerapiv1.TaskSkippedPhase:
+			skipped++
+		}
+	}
+
 	job.Status.CompletedCount = completed
 	job.Status.FailedCount = failed
 	job.Status.SkippedCount = skipped
@@ -150,7 +170,9 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	// Sequential mode: create the next task when the current one is terminal.
 	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
 		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 {
-			_ = r.Status().Update(ctx, job)
+			if updateErr := r.Status().Update(ctx, job); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
 			return result, err
 		}
 	}
@@ -259,7 +281,7 @@ func (r *PropellerJobReconciler) createTask(ctx context.Context, job *propellera
 	}
 
 	if err := r.Create(ctx, task); client.IgnoreAlreadyExists(err) != nil {
-		log.FromContext(context.Background()).Error(err, "failed to create task", "task", taskName)
+		log.FromContext(ctx).Error(err, "failed to create task", "task", taskName)
 		return err
 	}
 	return nil
@@ -286,10 +308,12 @@ func (r *PropellerJobReconciler) listOwnedTasks(ctx context.Context, job *propel
 
 // taskKubeName converts a job name and a spec-level task name to a Kubernetes
 // resource name that is safe to use in DependsOn references.
+// Kubernetes names must be lowercase alphanumeric with hyphens.
 func taskKubeName(jobName, specName string) string {
-	// Replace underscores/spaces with hyphens to satisfy Kubernetes naming rules.
+	// Replace underscores/spaces with hyphens and lowercase to satisfy
+	// Kubernetes RFC 1123 subdomain naming rules.
 	safe := strings.NewReplacer("_", "-", " ", "-").Replace(specName)
-	return fmt.Sprintf("%s-%s", jobName, safe)
+	return strings.ToLower(fmt.Sprintf("%s-%s", jobName, safe))
 }
 
 func isTerminalPhase(phase propellerapiv1.TaskPhase) bool {

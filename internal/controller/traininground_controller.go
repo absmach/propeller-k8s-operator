@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -152,19 +153,6 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      taskName,
 				Namespace: round.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: round.APIVersion,
-						Kind:       round.Kind,
-						Name:       round.Name,
-						UID:        round.UID,
-						Controller: func() *bool {
-							b := true
-
-							return &b
-						}(),
-					},
-				},
 				Labels: map[string]string{
 					"training-round": round.Name,
 					"round-id":       round.Spec.RoundID,
@@ -172,23 +160,25 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 				},
 			},
 			Spec: propellerapiv1.TaskSpec{
-				Name:         taskName,
-				FunctionName: "federated-learning",
-				ImageURL:     round.Spec.TaskWasmImage,
-				Env:          env,
-				Mode:         "train",
-				Daemon:       false,
-				CLIArgs:      []string{},
+				Name:     taskName,
+				ImageURL: round.Spec.TaskWasmImage,
+				Env:      env,
+				Mode:     "train",
+				Daemon:   false,
+				CLIArgs:  []string{},
 				PropletSelector: &propellerapiv1.PropletSelector{
 					PropletID: participantID,
 				},
 			},
 		}
-
-		if err := r.Create(ctx, task); err != nil {
+		// SetControllerReference resolves GVK from scheme; round.TypeMeta is
+		// empty for objects returned by client.Get.
+		if err := controllerutil.SetControllerReference(round, task, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.Create(ctx, task); client.IgnoreAlreadyExists(err) != nil {
 			logger.Error(err, "failed to create task", "task", taskName)
-
-			continue
+			return ctrl.Result{}, err
 		}
 
 		round.Status.Participants[i].TaskRef = &corev1.ObjectReference{

@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -94,19 +95,6 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roundName,
 			Namespace: job.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: job.APIVersion,
-					Kind:       job.Kind,
-					Name:       job.Name,
-					UID:        job.UID,
-					Controller: func() *bool {
-						b := true
-
-						return &b
-					}(),
-				},
-			},
 		},
 		Spec: propellerv1alpha1.TrainingRoundSpec{
 			RoundID: fmt.Sprintf("round-%d", 1),
@@ -121,8 +109,12 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 			TimeoutSeconds: job.Spec.TimeoutSeconds,
 		},
 	}
-
-	if err := r.Create(ctx, round); err != nil {
+	// Use SetControllerReference so GVK is resolved from the scheme — job.TypeMeta
+	// is empty for objects returned by client.Get and cannot be used directly.
+	if err := controllerutil.SetControllerReference(job, round, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.Create(ctx, round); client.IgnoreAlreadyExists(err) != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create training round: %w", err)
 	}
 
@@ -171,19 +163,6 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 					Name:        nextRoundName,
 					Namespace:   job.Namespace,
 					Annotations: nextRoundAnnotations,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: job.APIVersion,
-							Kind:       job.Kind,
-							Name:       job.Name,
-							UID:        job.UID,
-							Controller: func() *bool {
-								b := true
-
-								return &b
-							}(),
-						},
-					},
 				},
 				Spec: propellerv1alpha1.TrainingRoundSpec{
 					RoundID: fmt.Sprintf("round-%d", nextRoundNum),
@@ -198,8 +177,10 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 					TimeoutSeconds: job.Spec.TimeoutSeconds,
 				},
 			}
-
-			if err := r.Create(ctx, nextRound); err != nil {
+			if err := controllerutil.SetControllerReference(job, nextRound, r.Scheme); err != nil {
+				return ctrl.Result{}, err
+			}
+			if err := r.Create(ctx, nextRound); client.IgnoreAlreadyExists(err) != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to create next training round: %w", err)
 			}
 

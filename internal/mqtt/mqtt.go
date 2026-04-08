@@ -23,7 +23,7 @@ var (
 	errEmptyTopic         = errors.New("empty topic")
 	errEmptyClientID      = errors.New("empty client ID")
 
-	aliveTopicTemplate = "m/%s/c/%s/messages/control/proplet/alive"
+	aliveTopicTemplate = "m/%s/c/%s/control/proplet/alive"
 	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
 	mqttLogger         = logf.Log.WithName("mqtt")
 )
@@ -134,12 +134,16 @@ func newClient(address, id, username, password, domainID, channelID string, time
 
 	if channelID != "" {
 		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
-		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
+		// Use the MQTT client ID (id) as proplet_id — this matches the field
+		// the PropletReconciler's alive handler matches against
+		// Spec.ConnectionConfig.ClientID.  username is the client key/password,
+		// not the client identity.
+		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, id, channelID)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
 
 	opts.SetOnConnectHandler(func(_ mqtt.Client) {
-		mqttLogger.Info("MQTT connection lost")
+		mqttLogger.Info("MQTT connected")
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
