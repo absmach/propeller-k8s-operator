@@ -85,9 +85,8 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// Apply any heartbeat that arrived via MQTT since the last reconcile.
-	// This must happen before deletion/type-specific logic so that the final
-	// Status().Update() call in each branch persists the freshest data.
+	// Must happen before deletion/type-specific logic so the Status().Update()
+	// in each branch persists the freshest heartbeat data.
 	r.applyPendingHeartbeat(&proplet)
 
 	if proplet.DeletionTimestamp != nil {

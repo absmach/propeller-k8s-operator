@@ -199,15 +199,12 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		}
 	}
 
-	// Select a proplet.
 	propletID, err := r.selectProplet(ctx, task)
 	if err != nil {
-		// No available proplet — wait and retry.
 		log.FromContext(ctx).Info("no available proplet, requeueing", "reason", err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// Dispatch based on the proplet backend.
 	backend, err := r.determineBackend(ctx, task.Namespace, propletID)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -321,7 +318,6 @@ func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv
 		return ctrl.Result{RequeueAfter: delay}, nil
 	}
 
-	// Reset to pending for the next run.
 	task.Status.Phase = propellerapiv1.TaskPendingPhase
 	task.Status.AssignedProplet = ""
 	task.Status.StartedAt = nil
@@ -329,7 +325,6 @@ func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv
 	task.Status.Error = ""
 	task.Status.Results = nil
 	task.Status.Conditions = []propellerapiv1.TaskCondition{}
-	// Clear NextRun so external scheduling logic can set the next window.
 	task.Status.NextRun = nil
 
 	return ctrl.Result{}, r.Status().Update(ctx, task)
@@ -748,9 +743,6 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 	// Subscribe to proplet result and status topics; task lifecycle topics are
 	// separate from proplet liveness (handled by PropletReconciler).
 	if r.pubsub != nil {
-		// The proplet publishes task results on /control/proplet/results.
-		// There is no /control/proplet/status topic in the proplet implementation;
-		// the mqttStatusHandler is kept for completeness but not subscribed.
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/results",
 			func(_ string, msg map[string]any) error {
@@ -763,15 +755,11 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerapiv1.Task{}).
-		// When a owned Job changes state (e.g., pod succeeds), re-reconcile the task.
 		Owns(&batchv1.Job{}).
-		// When any Task becomes terminal, fan out to all tasks that depend on it.
 		Watches(
 			&propellerapiv1.Task{},
 			handler.EnqueueRequestsFromMapFunc(r.enqueueDependents),
 		).
-		// MQTT result/status events enter the reconcile queue via this channel
-		// rather than through direct API writes from the MQTT goroutine.
 		WatchesRawSource(source.Channel(r.taskEvents, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }

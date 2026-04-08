@@ -147,7 +147,6 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 		}
 	}
 
-	// Also tally terminal TaskRefs (pre-existing tasks monitored but not owned).
 	for _, refName := range job.Spec.TaskRefs {
 		ref := &propellerapiv1.Task{}
 		if err := r.Get(ctx, client.ObjectKey{Name: refName, Namespace: job.Namespace}, ref); err != nil {
@@ -167,7 +166,6 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	job.Status.FailedCount = failed
 	job.Status.SkippedCount = skipped
 
-	// Sequential mode: create the next task when the current one is terminal.
 	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
 		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 {
 			if updateErr := r.Status().Update(ctx, job); updateErr != nil {
@@ -177,7 +175,6 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 		}
 	}
 
-	// Check overall completion.
 	totalTasks := job.Status.TaskCount
 	finishedTasks := completed + failed + skipped
 
