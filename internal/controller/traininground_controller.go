@@ -213,8 +213,25 @@ func (r *TrainingRoundReconciler) handleRunning(ctx context.Context, round *prop
 		return r.transitionToAggregating(ctx, round, updatesReceived)
 	}
 
-	if result := r.checkTimeout(ctx, round, updatesReceived); result != nil {
-		return *result, nil
+	// If all participants are in a terminal state (including skipped/interrupted)
+	// and KOfN is unachievable, fail the round immediately rather than waiting
+	// for a timeout that may never arrive.
+	allTerminal := true
+	for _, p := range round.Status.Participants {
+		if p.Status != phaseCompleted && p.Status != phaseFailed {
+			allTerminal = false
+			break
+		}
+	}
+	if allTerminal && len(round.Status.Participants) > 0 {
+		round.Status.Phase = phaseFailed
+		r.updateCondition(round, "False", "InsufficientUpdates",
+			fmt.Sprintf("All participants terminal but only %d/%d updates collected", updatesReceived, round.Spec.KOfN))
+		return ctrl.Result{}, r.Status().Update(ctx, round)
+	}
+
+	if result, timedOut, err := r.checkTimeout(ctx, round, updatesReceived); timedOut {
+		return result, err
 	}
 
 	return r.updateStatusAndRequeue(ctx, round, time.Second*10)
@@ -301,6 +318,11 @@ func (r *TrainingRoundReconciler) processParticipants(ctx context.Context, round
 		case propellerapiv1.TaskFailedPhase:
 			round.Status.Participants[i].Status = phaseFailed
 			logger.Info("participant task failed", "participant", participant.PropletID, "task", participant.TaskRef.Name)
+		case propellerapiv1.TaskSkippedPhase, propellerapiv1.TaskInterruptedPhase:
+			// Skipped/interrupted tasks will never deliver an update; mark them
+			// so the round does not wait for them indefinitely.
+			round.Status.Participants[i].Status = phaseFailed
+			logger.Info("participant task skipped or interrupted", "participant", participant.PropletID, "task", participant.TaskRef.Name, "phase", task.Status.Phase)
 		case propellerapiv1.TaskRunningPhase, propellerapiv1.TaskPendingPhase:
 		}
 	}
@@ -337,21 +359,20 @@ func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, r
 	return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 }
 
-func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerv1alpha1.TrainingRound, updatesReceived int) *ctrl.Result {
-	if round.Spec.TimeoutSeconds > 0 && round.Status.StartTime != nil {
-		elapsed := time.Since(round.Status.StartTime.Time)
-		if elapsed > time.Duration(round.Spec.TimeoutSeconds)*time.Second {
-			round.Status.Phase = phaseFailed
-			r.updateCondition(round, "False", "Timeout", fmt.Sprintf("Round timed out: only %d/%d updates received", updatesReceived, round.Spec.KOfN))
-			if err := r.Status().Update(ctx, round); err != nil {
-				return &ctrl.Result{}
-			}
-
-			return &ctrl.Result{}
-		}
+// checkTimeout returns (result, timedOut, err). When timedOut is true the
+// caller must return immediately; err holds any Status().Update failure so it
+// is not silently discarded.
+func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerv1alpha1.TrainingRound, updatesReceived int) (ctrl.Result, bool, error) {
+	if round.Spec.TimeoutSeconds <= 0 || round.Status.StartTime == nil {
+		return ctrl.Result{}, false, nil
 	}
-
-	return nil
+	elapsed := time.Since(round.Status.StartTime.Time)
+	if elapsed <= time.Duration(round.Spec.TimeoutSeconds)*time.Second {
+		return ctrl.Result{}, false, nil
+	}
+	round.Status.Phase = phaseFailed
+	r.updateCondition(round, "False", "Timeout", fmt.Sprintf("Round timed out: only %d/%d updates received", updatesReceived, round.Spec.KOfN))
+	return ctrl.Result{}, true, r.Status().Update(ctx, round)
 }
 
 func (r *TrainingRoundReconciler) aggregateUpdates(ctx context.Context, round *propellerv1alpha1.TrainingRound, collectedUpdates []UpdateEnvelope, algorithm string) string {

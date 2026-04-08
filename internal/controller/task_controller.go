@@ -457,8 +457,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		task.Status.FinishedAt = &now
 		task.Status.Error = "MQTT pubsub not configured"
 		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "MQTTNotConfigured", task.Status.Error)
-		_ = r.Status().Update(ctx, task)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.Status().Update(ctx, task)
 	}
 
 	topic := r.baseTopic + "/control/manager/start"
