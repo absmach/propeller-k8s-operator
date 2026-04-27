@@ -24,6 +24,7 @@ import (
 	"time"
 
 	propellerapiv1 "github.com/absmach/propeller/api/v1"
+	propellercron "github.com/absmach/propeller/internal/cron"
 	"github.com/absmach/propeller/internal/dag"
 	"github.com/absmach/propeller/internal/mqtt"
 	"github.com/absmach/propeller/internal/scheduler"
@@ -47,6 +48,10 @@ import (
 
 // indexDependsOn is the field index key for Task.Spec.DependsOn.
 const indexDependsOn = "spec.dependsOn"
+
+// TaskFinalizerName is the finalizer added to external tasks so we can send
+// a stop command before the resource is removed from etcd.
+const TaskFinalizerName = "propeller.propeller.abstractmachines.fr/task-finalizer"
 
 // mqttTaskUpdate carries the payload from an MQTT result or status message
 // delivered by a proplet.  It is stored in pendingResults by the MQTT goroutine
@@ -78,6 +83,10 @@ type TaskReconciler struct {
 	// pendingResults stores MQTT-delivered task updates keyed by string(task.UID).
 	// Written by MQTT handlers, consumed (LoadAndDelete) inside Reconcile.
 	pendingResults sync.Map
+
+	// pendingMetrics stores the latest metrics snapshot keyed by string(task.UID).
+	// Written by the MQTT task_metrics handler, consumed inside Reconcile.
+	pendingMetrics sync.Map
 }
 
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -97,6 +106,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Handle deletion: send stop command to external proplets before removing
+	// the finalizer so the workload is not orphaned on the proplet.
+	if task.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, task)
+	}
+
 	// Consume any MQTT update (result/status) that arrived from a proplet since
 	// the last reconcile.  If one is present, persist the new phase and return;
 	// the status-change event will trigger the next reconcile to process it.
@@ -108,6 +123,9 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		return ctrl.Result{}, nil
 	}
+
+	// Apply any pending metrics snapshot delivered by the MQTT goroutine.
+	r.applyPendingMetrics(task)
 
 	if task.Status.Phase == "" {
 		task.Status.Phase = propellerapiv1.TaskPendingPhase
@@ -132,6 +150,31 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		logger.Info("unknown phase, ignoring", "phase", task.Status.Phase)
 		return ctrl.Result{}, nil
 	}
+}
+
+// handleDeletion sends an MQTT stop to the proplet when a running/scheduled
+// external task is deleted, then removes the finalizer.
+func (r *TaskReconciler) handleDeletion(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
+	if controllerutil.ContainsFinalizer(task, TaskFinalizerName) {
+		phase := task.Status.Phase
+		if (phase == propellerapiv1.TaskRunningPhase || phase == propellerapiv1.TaskScheduledPhase) &&
+			r.pubsub != nil {
+			stopPayload := map[string]any{
+				"id":         string(task.UID),
+				"proplet_id": task.Status.AssignedProplet,
+				"broadcast":  task.Spec.Broadcast,
+			}
+			topic := r.baseTopic + "/control/manager/stop"
+			if err := r.pubsub.Publish(topic, stopPayload); err != nil {
+				log.FromContext(ctx).Error(err, "failed to publish task stop command on deletion")
+			}
+		}
+		controllerutil.RemoveFinalizer(task, TaskFinalizerName)
+		if err := r.Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	return ctrl.Result{}, nil
 }
 
 // applyMQTTUpdate checks pendingResults for an update stored by an MQTT
@@ -183,6 +226,24 @@ func (r *TaskReconciler) applyMQTTUpdate(task *propellerapiv1.Task) (mqttTaskUpd
 
 // handlePending checks dependencies, selects a proplet, and dispatches the task.
 func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
+	// If this task has a cron schedule and NextRun has not been set yet, compute
+	// it now so handleTerminal can requeue at the right time after completion.
+	if task.Spec.Schedule != "" && task.Status.NextRun == nil {
+		sched, err := propellercron.ParseCronExpression(task.Spec.Schedule)
+		if err == nil {
+			tz := task.Spec.Timezone
+			if tz == "" {
+				tz = "UTC"
+			}
+			next := propellercron.CalculateNextRun(sched, time.Now(), tz)
+			t := metav1.NewTime(next)
+			task.Status.NextRun = &t
+			if err := r.Status().Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	// Dependency gate: wait until all declared dependencies are terminal.
 	// No requeue is issued here — the Watches(Task, enqueueDependents) watch
 	// will trigger reconcile when a dependency reaches a terminal phase.
@@ -197,6 +258,11 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		if !allDone {
 			return ctrl.Result{}, nil
 		}
+	}
+
+	// Broadcast: publish to all proplets without selecting a specific one.
+	if task.Spec.Broadcast {
+		return r.startBroadcastTask(ctx, task)
 	}
 
 	propletID, err := r.selectProplet(ctx, task)
@@ -216,6 +282,64 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 	default:
 		return r.startExternalTask(ctx, task, propletID)
 	}
+}
+
+// startBroadcastTask publishes a start command with no proplet_id so that all
+// proplets subscribed to the channel will pick up the task.
+func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	if r.pubsub == nil {
+		task.Status.Phase = propellerapiv1.TaskFailedPhase
+		now := metav1.Now()
+		task.Status.FinishedAt = &now
+		task.Status.Error = "MQTT pubsub not configured"
+		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "MQTTNotConfigured", task.Status.Error)
+		return ctrl.Result{}, r.Status().Update(ctx, task)
+	}
+
+	if !controllerutil.ContainsFinalizer(task, TaskFinalizerName) {
+		controllerutil.AddFinalizer(task, TaskFinalizerName)
+		if err := r.Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	topic := r.baseTopic + "/control/manager/start"
+	funcName := task.Spec.FunctionName
+	if funcName == "" {
+		funcName = task.Name
+	}
+
+	const scheduledState = 1
+	payload := map[string]any{
+		"id":        string(task.UID),
+		"name":      funcName,
+		"state":     scheduledState,
+		"kind":      task.Spec.Kind,
+		"image_url": task.Spec.ImageURL,
+		"file":      task.Spec.File,
+		"inputs":    task.Spec.Inputs,
+		"cli_args":  task.Spec.CLIArgs,
+		"env":       task.Spec.Env,
+		"daemon":    task.Spec.Daemon,
+		"mode":      task.Spec.Mode,
+		"broadcast": true,
+	}
+
+	if err := r.pubsub.Publish(topic, payload); err != nil {
+		logger.Error(err, "failed to publish broadcast task start command")
+		return ctrl.Result{}, err
+	}
+
+	now := metav1.Now()
+	task.Status.Phase = propellerapiv1.TaskRunningPhase
+	task.Status.StartedAt = &now
+	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Broadcast task dispatched via MQTT")
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
 
 // evaluateDeps inspects all tasks listed in task.Spec.DependsOn and returns
@@ -306,11 +430,30 @@ func (r *TaskReconciler) handleRunning(ctx context.Context, task *propellerapiv1
 }
 
 // handleTerminal handles completed/failed tasks that have IsRecurring set.
-// Without a cron parser dependency the controller relies on Status.NextRun
-// being set externally or left nil (in which case the task stays terminal).
+// It computes the next run time from Spec.Schedule when needed and requeues
+// until that time arrives, then resets the task back to Pending.
 func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
-	if !task.Spec.IsRecurring || task.Status.NextRun == nil {
+	if !task.Spec.IsRecurring || task.Spec.Schedule == "" {
 		return ctrl.Result{}, nil
+	}
+
+	// Compute NextRun if it has not been set yet (e.g. first completion).
+	if task.Status.NextRun == nil {
+		sched, err := propellercron.ParseCronExpression(task.Spec.Schedule)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "invalid cron expression in spec", "schedule", task.Spec.Schedule)
+			return ctrl.Result{}, nil
+		}
+		tz := task.Spec.Timezone
+		if tz == "" {
+			tz = "UTC"
+		}
+		next := propellercron.CalculateNextRun(sched, time.Now(), tz)
+		t := metav1.NewTime(next)
+		task.Status.NextRun = &t
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	delay := time.Until(task.Status.NextRun.Time)
@@ -318,6 +461,7 @@ func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv
 		return ctrl.Result{RequeueAfter: delay}, nil
 	}
 
+	// NextRun has arrived — reset the task to Pending for the next execution.
 	task.Status.Phase = propellerapiv1.TaskPendingPhase
 	task.Status.AssignedProplet = ""
 	task.Status.StartedAt = nil
@@ -325,7 +469,7 @@ func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv
 	task.Status.Error = ""
 	task.Status.Results = nil
 	task.Status.Conditions = []propellerapiv1.TaskCondition{}
-	task.Status.NextRun = nil
+	task.Status.NextRun = nil // will be recomputed in handlePending
 
 	return ctrl.Result{}, r.Status().Update(ctx, task)
 }
@@ -453,6 +597,14 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		task.Status.Error = "MQTT pubsub not configured"
 		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "MQTTNotConfigured", task.Status.Error)
 		return ctrl.Result{}, r.Status().Update(ctx, task)
+	}
+
+	// Add finalizer so we can send a stop command when the Task is deleted.
+	if !controllerutil.ContainsFinalizer(task, TaskFinalizerName) {
+		controllerutil.AddFinalizer(task, TaskFinalizerName)
+		if err := r.Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	topic := r.baseTopic + "/control/manager/start"
@@ -640,6 +792,62 @@ func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionTyp
 	task.Status.Conditions = append(task.Status.Conditions, cond)
 }
 
+// applyPendingMetrics checks pendingMetrics for a snapshot stored by the MQTT
+// metrics handler and applies it to the in-memory task object.  The caller is
+// responsible for persisting via Status().Update() when needed.
+func (r *TaskReconciler) applyPendingMetrics(task *propellerapiv1.Task) {
+	raw, ok := r.pendingMetrics.LoadAndDelete(string(task.UID))
+	if !ok {
+		return
+	}
+	snap := raw.(propellerapiv1.TaskMetricsSnapshot)
+	task.Status.LatestMetrics = &snap
+}
+
+// mqttTaskMetricsHandler is called by the MQTT goroutine for messages on
+// /control/proplet/task_metrics.  It must not write to the Kubernetes API.
+func (r *TaskReconciler) mqttTaskMetricsHandler(ctx context.Context, msg map[string]any) error {
+	taskUID, ok := msg["task_id"].(string)
+	if !ok || taskUID == "" {
+		return nil
+	}
+
+	snap := propellerapiv1.TaskMetricsSnapshot{}
+	now := metav1.Now()
+	snap.Timestamp = &now
+
+	if metricsData, ok := msg["metrics"].(map[string]any); ok {
+		if v, ok := metricsData["cpu_percent"].(float64); ok {
+			snap.CPUMilliPercent = int64(v * 1000)
+		}
+		if v, ok := metricsData["memory_bytes"].(float64); ok {
+			snap.MemoryBytes = uint64(v)
+		}
+		if v, ok := metricsData["memory_percent"].(float64); ok {
+			snap.MemoryMilliPercent = int64(v * 1000)
+		}
+	}
+
+	// Find the Task with this UID and enqueue a reconcile.
+	var tasks propellerapiv1.TaskList
+	if err := r.List(ctx, &tasks); err != nil {
+		return err
+	}
+	for i := range tasks.Items {
+		if string(tasks.Items[i].UID) != taskUID {
+			continue
+		}
+		t := &tasks.Items[i]
+		r.pendingMetrics.Store(taskUID, snap)
+		select {
+		case r.taskEvents <- event.GenericEvent{Object: t}:
+		default:
+		}
+		return nil
+	}
+	return nil
+}
+
 // mqttResultHandler is called by the MQTT goroutine when a proplet publishes
 // a result on /control/proplet/results.  It must not write to the Kubernetes
 // API.  Instead it stores the update and enqueues a GenericEvent.
@@ -750,13 +958,21 @@ func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.M
 		return fmt.Errorf("failed to register %s field index: %w", indexDependsOn, err)
 	}
 
-	// Subscribe to proplet result and status topics; task lifecycle topics are
+	// Subscribe to proplet result and metrics topics; task lifecycle topics are
 	// separate from proplet liveness (handled by PropletReconciler).
 	if r.pubsub != nil {
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/results",
 			func(_ string, msg map[string]any) error {
 				return r.mqttResultHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/task_metrics",
+			func(_ string, msg map[string]any) error {
+				return r.mqttTaskMetricsHandler(context.Background(), msg)
 			},
 		); err != nil {
 			return err

@@ -60,7 +60,6 @@ const (
 
 	TaskModeInfer TaskMode = "infer"
 	TaskModeTrain TaskMode = "train"
-
 )
 
 type PropletSelector struct {
@@ -98,27 +97,27 @@ type TaskSpec struct {
 	FunctionName string `json:"functionName,omitempty"`
 	// +kubebuilder:validation:Enum=standard;federated
 	// +kubebuilder:default="standard"
-	Kind            TaskKind         `json:"kind,omitempty"`
-	ImageURL        string           `json:"imageUrl,omitempty"`
-	File            []byte           `json:"file,omitempty"`
-	CLIArgs []string `json:"cliArgs,omitempty"`
+	Kind     TaskKind `json:"kind,omitempty"`
+	ImageURL string   `json:"imageUrl,omitempty"`
+	File     []byte   `json:"file,omitempty"`
+	CLIArgs  []string `json:"cliArgs,omitempty"`
 	// Inputs are task input arguments. Each element is a string but numeric
 	// values are accepted and coerced — matching the FlexStrings behaviour of
 	// the main propeller manager.
-	Inputs []string `json:"inputs,omitempty"`
+	Inputs          []string         `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	// +kubebuilder:default="any"
-	PreferredPropletType PropletKind          `json:"preferredPropletType,omitempty"`
-	ResourceRequirements *PropletResources    `json:"resourceRequirements,omitempty,omitzero"`
-	Env                  map[string]string    `json:"env,omitempty"`
-	Daemon               bool                 `json:"daemon,omitempty"`
+	PreferredPropletType PropletKind       `json:"preferredPropletType,omitempty"`
+	ResourceRequirements *PropletResources `json:"resourceRequirements,omitempty,omitzero"`
+	Env                  map[string]string `json:"env,omitempty"`
+	Daemon               bool              `json:"daemon,omitempty"`
 	// Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
 	// Mirrors task.Task.Broadcast in the propeller codebase.
-	Broadcast            bool                 `json:"broadcast,omitempty"`
-	Mode                 TaskMode             `json:"mode,omitempty"`
-	MonitoringProfile    *MonitoringProfile   `json:"monitoringProfile,omitempty"`
-	RestartPolicy        corev1.RestartPolicy `json:"restartPolicy,omitempty"`
+	Broadcast         bool                 `json:"broadcast,omitempty"`
+	Mode              TaskMode             `json:"mode,omitempty"`
+	MonitoringProfile *MonitoringProfile   `json:"monitoringProfile,omitempty"`
+	RestartPolicy     corev1.RestartPolicy `json:"restartPolicy,omitempty"`
 
 	// Confidential computing fields
 	Encrypted       bool   `json:"encrypted,omitempty"`
@@ -153,6 +152,10 @@ type TaskSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	Metadata *apiextensionsv1.JSON `json:"metadata,omitempty"`
+
+	// Broadcast sends the task to all running proplets simultaneously.
+	// Mutually exclusive with PropletSelector.PropletID.
+	Broadcast bool `json:"broadcast,omitempty"`
 }
 
 // MonitoringProfile defines monitoring configuration for task execution
@@ -195,6 +198,8 @@ type TaskStatus struct {
 	Results    *apiextensionsv1.JSON `json:"results,omitempty"`
 	Error      string                `json:"error,omitempty"`
 	Conditions []TaskCondition       `json:"conditions,omitzero"`
+	// LatestMetrics is the most recent metrics sample reported by the proplet for this task.
+	LatestMetrics *TaskMetricsSnapshot `json:"latestMetrics,omitempty"`
 }
 
 // +kubebuilder:object:root=true

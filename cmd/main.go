@@ -275,6 +275,15 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "PropellerJob")
 		os.Exit(1)
 	}
+
+	if err := propellerv1.SetupTaskWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Task")
+		os.Exit(1)
+	}
+	if err := propellerv1.SetupPropletWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Proplet")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

@@ -91,8 +91,8 @@ spec:
                   properties:
                     broadcast:
                       description: |-
-                        Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
-                        Mirrors task.Task.Broadcast in the propeller codebase.
+                        Broadcast sends the task to all running proplets simultaneously.
+                        Mutually exclusive with PropletSelector.PropletID.
                       type: boolean
                     cliArgs:
                       items:
@@ -345,6 +345,8 @@ spec:
               finishTime:
                 format: date-time
                 type: string
+              interruptedCount:
+                type: integer
               phase:
                 default: Pending
                 enum:
