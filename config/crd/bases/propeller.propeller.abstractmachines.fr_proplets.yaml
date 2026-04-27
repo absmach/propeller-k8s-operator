@@ -188,6 +188,8 @@ spec:
           status:
             description: status defines the observed state of Proplet
             properties:
+              alive:
+                type: boolean
               aliveHistory:
                 description: AliveHistory stores recent heartbeat timestamps for liveness
                   tracking
@@ -314,6 +316,7 @@ spec:
                 format: int64
                 type: integer
             required:
+            - alive
             - phase
             - taskCount
             type: object

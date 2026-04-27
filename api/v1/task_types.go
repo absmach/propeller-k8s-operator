@@ -60,7 +60,13 @@ const (
 
 	TaskModeInfer TaskMode = "infer"
 	TaskModeTrain TaskMode = "train"
+
+	RunIfSuccess = "success"
+	RunIfFailure = "failure"
 )
+
+const DefaultPriority = 50
+const DefaultTimezone = "UTC"
 
 type PropletSelector struct {
 	PropletID         string            `json:"propletId,omitempty"`

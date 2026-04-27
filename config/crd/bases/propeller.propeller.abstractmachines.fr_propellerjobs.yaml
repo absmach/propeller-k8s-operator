@@ -340,6 +340,9 @@ spec:
                   - type
                   type: object
                 type: array
+              createdAt:
+                format: date-time
+                type: string
               failedCount:
                 type: integer
               finishTime:
@@ -362,6 +365,9 @@ spec:
                 type: string
               taskCount:
                 type: integer
+              updatedAt:
+                format: date-time
+                type: string
             required:
             - phase
             type: object

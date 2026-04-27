@@ -40,23 +40,23 @@ type PropletMetadata struct {
 // CPU and memory percentages are stored as millipercent (value × 1000) to avoid
 // floating-point fields which are not well-supported in CRD schemas.
 type PropletMetricsSnapshot struct {
-	Timestamp          *metav1.Time `json:"timestamp,omitempty"`
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
 	// CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000 = 50 %).
-	CPUMilliPercent    int64        `json:"cpuMilliPercent,omitempty"`
+	CPUMilliPercent int64 `json:"cpuMilliPercent,omitempty"`
 	// MemoryMilliPercent is memory utilisation × 1000.
-	MemoryMilliPercent int64        `json:"memoryMilliPercent,omitempty"`
-	MemoryBytes        uint64       `json:"memoryBytes,omitempty"`
+	MemoryMilliPercent int64  `json:"memoryMilliPercent,omitempty"`
+	MemoryBytes        uint64 `json:"memoryBytes,omitempty"`
 }
 
 // TaskMetricsSnapshot holds the latest metrics sample for a running task.
 // CPU and memory percentages are stored as millipercent (value × 1000).
 type TaskMetricsSnapshot struct {
-	Timestamp          *metav1.Time `json:"timestamp,omitempty"`
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
 	// CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000 = 50 %).
-	CPUMilliPercent    int64        `json:"cpuMilliPercent,omitempty"`
+	CPUMilliPercent int64 `json:"cpuMilliPercent,omitempty"`
 	// MemoryMilliPercent is memory utilisation × 1000.
-	MemoryMilliPercent int64        `json:"memoryMilliPercent,omitempty"`
-	MemoryBytes        uint64       `json:"memoryBytes,omitempty"`
+	MemoryMilliPercent int64  `json:"memoryMilliPercent,omitempty"`
+	MemoryBytes        uint64 `json:"memoryBytes,omitempty"`
 }
 
 type (
@@ -172,14 +172,15 @@ type PropletStatus struct {
 	Phase      PropletPhase       `json:"phase"`
 	Conditions []PropletCondition `json:"conditions,omitempty"`
 	LastSeen   *metav1.Time       `json:"lastSeen,omitempty"`
+	Alive      bool               `json:"alive"`
 	// AliveHistory stores recent heartbeat timestamps for liveness tracking
 	AliveHistory []metav1.Time `json:"aliveHistory,omitempty"`
 	// +kubebuilder:default=0
-	TaskCount          uint64                  `json:"taskCount"`
-	AvailableResources *PropletResources       `json:"availableResources,omitempty"`
-	K8sStatus          *K8sStatus              `json:"k8sStatus,omitempty"`
+	TaskCount          uint64            `json:"taskCount"`
+	AvailableResources *PropletResources `json:"availableResources,omitempty"`
+	K8sStatus          *K8sStatus        `json:"k8sStatus,omitempty"`
 	// Metadata holds runtime information reported by the proplet over MQTT.
-	Metadata *PropletMetadata        `json:"metadata,omitempty"`
+	Metadata *PropletMetadata `json:"metadata,omitempty"`
 	// LatestMetrics is the most recent metrics sample received from the proplet.
 	LatestMetrics *PropletMetricsSnapshot `json:"latestMetrics,omitempty"`
 }

@@ -128,7 +128,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	r.applyPendingMetrics(task)
 
 	if task.Status.Phase == "" {
+		now := metav1.Now()
 		task.Status.Phase = propellerapiv1.TaskPendingPhase
+		task.Status.CreatedAt = &now
+		task.Status.UpdatedAt = &now
 		if task.Status.Conditions == nil {
 			task.Status.Conditions = []propellerapiv1.TaskCondition{}
 		}

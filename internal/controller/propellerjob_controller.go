@@ -69,11 +69,10 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if job.Status.Phase == "" {
+		now := metav1.Now()
 		job.Status.Phase = propellerapiv1.JobPhasePending
-		// TaskCount includes both inline Tasks (created by this controller) and
-		// TaskRefs (pre-existing external tasks that this job monitors but does
-		// not create).  Including TaskRefs ensures a TaskRefs-only job does not
-		// immediately complete with 0/0 when it enters Running.
+		job.Status.CreatedAt = &now
+		job.Status.UpdatedAt = &now
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
 		if err := r.Status().Update(ctx, job); err != nil {
 			return ctrl.Result{}, err
@@ -120,6 +119,7 @@ func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propell
 	now := metav1.Now()
 	job.Status.Phase = propellerapiv1.JobPhaseRunning
 	job.Status.StartTime = &now
+	job.Status.UpdatedAt = &now
 	if err := r.Status().Update(ctx, job); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -170,9 +170,11 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	job.Status.FailedCount = failed
 	job.Status.SkippedCount = skipped
 	job.Status.InterruptedCount = interrupted
+	now := metav1.Now()
 
 	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
 		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 {
+			job.Status.UpdatedAt = &now
 			if updateErr := r.Status().Update(ctx, job); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
@@ -184,8 +186,8 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	finishedTasks := completed + failed + skipped + interrupted
 
 	if finishedTasks >= totalTasks {
-		now := metav1.Now()
 		job.Status.FinishTime = &now
+		job.Status.UpdatedAt = &now
 		if failed > 0 || interrupted > 0 {
 			job.Status.Phase = propellerapiv1.JobPhaseFailed
 		} else {

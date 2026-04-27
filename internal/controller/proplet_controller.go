@@ -137,9 +137,9 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // applyPendingHeartbeat checks the pendingHeartbeats map for a timestamp stored
-// by the MQTT liveness handler and, if present, updates LastSeen and AliveHistory
-// on the in-memory proplet object.  The caller is responsible for persisting
-// these changes via Status().Update().
+// by the MQTT liveness handler and, if present, updates LastSeen, AliveHistory,
+// and Alive on the in-memory proplet object.  The caller is responsible
+// for persisting these changes via Status().Update().
 func (r *PropletReconciler) applyPendingHeartbeat(proplet *propellerv1.Proplet) {
 	ts, ok := r.pendingHeartbeats.LoadAndDelete(string(proplet.UID))
 	if !ok {
@@ -152,7 +152,8 @@ func (r *PropletReconciler) applyPendingHeartbeat(proplet *propellerv1.Proplet) 
 		proplet.Status.AliveHistory = proplet.Status.AliveHistory[len(proplet.Status.AliveHistory)-aliveHistoryLimit:]
 	}
 
-	// Apply metadata and metrics delivered in the same heartbeat, if any.
+	proplet.Status.Alive = true
+
 	if raw, ok := r.pendingMetadata.LoadAndDelete(string(proplet.UID)); ok {
 		meta := raw.(propellerv1.PropletMetadata)
 		proplet.Status.Metadata = &meta
@@ -436,12 +437,14 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
 		if timeSinceLastSeen > r.lastSeenThreshold {
 			proplet.Status.Phase = propellerv1.PropletOfflinePhase
+			proplet.Status.Alive = false
 			r.setCondition(proplet, propellerv1.PropletConditionConnected, metav1.ConditionFalse, "PropletOffline",
 				fmt.Sprintf("offline for %s (threshold: %s)", timeSinceLastSeen, r.lastSeenThreshold))
 			r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionFalse, "PropletOffline",
 				"external proplet is offline")
 		} else {
 			proplet.Status.Phase = propellerv1.PropletRunningPhase
+			proplet.Status.Alive = true
 			r.setCondition(proplet, propellerv1.PropletConditionConnected, metav1.ConditionTrue, "PropletOnline",
 				fmt.Sprintf("last seen %s ago", timeSinceLastSeen))
 			r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionTrue, "PropletReady",
@@ -449,6 +452,7 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		}
 	default:
 		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+		proplet.Status.Alive = false
 		r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionFalse, "PropletInitializing",
 			"waiting for first heartbeat")
 		r.removeCondition(proplet, propellerv1.PropletConditionConnected)

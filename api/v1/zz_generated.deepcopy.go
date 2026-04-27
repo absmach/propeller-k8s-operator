@@ -224,6 +224,14 @@ func (in *PropellerJobStatus) DeepCopyInto(out *PropellerJobStatus) {
 		in, out := &in.FinishTime, &out.FinishTime
 		*out = (*in).DeepCopy()
 	}
+	if in.CreatedAt != nil {
+		in, out := &in.CreatedAt, &out.CreatedAt
+		*out = (*in).DeepCopy()
+	}
+	if in.UpdatedAt != nil {
+		in, out := &in.UpdatedAt, &out.UpdatedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))
