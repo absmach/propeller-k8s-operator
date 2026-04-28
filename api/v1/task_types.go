@@ -148,8 +148,8 @@ type TaskSpec struct {
 	// +kubebuilder:default=50
 	Priority int `json:"priority,omitempty"`
 
-	// Metadata is arbitrary key-value data attached to the task.
-	// Must be valid JSON and under 64 KB. Mirrors task.Task.Metadata in the propeller codebase.
+	// Metadata is arbitrary key-value data attached to the task. Must be valid JSON.
+	// Mirrors task.Task.Metadata in the propeller codebase.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	Metadata *apiextensionsv1.JSON `json:"metadata,omitempty"`

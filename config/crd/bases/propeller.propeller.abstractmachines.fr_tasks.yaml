@@ -126,8 +126,8 @@ spec:
                 type: string
               metadata:
                 description: |-
-                  Metadata is arbitrary key-value data attached to the task.
-                  Must be valid JSON and under 64 KB. Mirrors task.Task.Metadata in the propeller codebase.
+                  Metadata is arbitrary key-value data attached to the task. Must be valid JSON.
+                  Mirrors task.Task.Metadata in the propeller codebase.
                 x-kubernetes-preserve-unknown-fields: true
               mode:
                 enum:
