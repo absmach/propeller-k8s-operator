@@ -498,15 +498,17 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 
 	if task.Spec.Metadata != nil {
 		var meta map[string]any
-		if err := json.Unmarshal(task.Spec.Metadata.Raw, &meta); err == nil {
+		if err := json.Unmarshal(task.Spec.Metadata.Raw, &meta); err != nil {
+			logger.Error(err, "failed to unmarshal task metadata, skipping")
+		} else {
 			payload["metadata"] = meta
 		}
 	}
 
 	if task.Spec.MonitoringProfile != nil {
 		mp := task.Spec.MonitoringProfile
-		// Key must be "monitoringProfile" — the Rust proplet uses
-		// #[serde(rename = "monitoringProfile")] on the StartRequest field.
+		// Key must be "monitoring_profile" — commit e735acc changed the Rust proplet's
+		// serde rename annotation from "monitoringProfile" back to "monitoring_profile".
 		// Interval is serialised as u64 seconds by the proplet's serde_duration module.
 		profile := map[string]any{
 			"enabled":                  mp.Enabled,
@@ -522,7 +524,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		if mp.Interval != nil {
 			profile["interval"] = uint64(mp.Interval.Duration.Seconds())
 		}
-		payload["monitoringProfile"] = profile
+		payload["monitoring_profile"] = profile
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {
