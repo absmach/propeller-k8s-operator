@@ -276,22 +276,30 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 									corev1.ResourceMemory: *proplet.Spec.Resource.Memory(),
 								},
 							},
-							Env: []corev1.EnvVar{
-								{Name: "PROPLET_LOG_LEVEL", Value: proplet.Spec.K8s.LogLevel},
-								{Name: "PROPLET_MQTT_ADDRESS", Value: proplet.Spec.ConnectionConfig.MQTTAddress},
-								{Name: "PROPLET_MQTT_TIMEOUT", Value: proplet.Spec.ConnectionConfig.MQTTTimeout.Duration.String()},
-								{Name: "PROPLET_MQTT_QOS", Value: fmt.Sprintf("%d", proplet.Spec.ConnectionConfig.MQTTQoS)},
-								{Name: "PROPLET_DOMAIN_ID", Value: proplet.Spec.ConnectionConfig.DomainID},
-								{Name: "PROPLET_CHANNEL_ID", Value: proplet.Spec.ConnectionConfig.ChannelID},
-								{Name: "PROPLET_CLIENT_ID", Value: proplet.Spec.ConnectionConfig.ClientID},
-								{Name: "PROPLET_CLIENT_KEY", Value: proplet.Spec.ConnectionConfig.ClientKey},
-							},
+							Env: buildPropletEnv(proplet),
 						},
 					},
 				},
 			},
 		},
 	}
+}
+
+func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
+	envVars := []corev1.EnvVar{
+		{Name: "PROPLET_LOG_LEVEL", Value: proplet.Spec.K8s.LogLevel},
+		{Name: "PROPLET_MQTT_ADDRESS", Value: proplet.Spec.ConnectionConfig.MQTTAddress},
+		{Name: "PROPLET_MQTT_TIMEOUT", Value: proplet.Spec.ConnectionConfig.MQTTTimeout.Duration.String()},
+		{Name: "PROPLET_MQTT_QOS", Value: fmt.Sprintf("%d", proplet.Spec.ConnectionConfig.MQTTQoS)},
+		{Name: "PROPLET_DOMAIN_ID", Value: proplet.Spec.ConnectionConfig.DomainID},
+		{Name: "PROPLET_CHANNEL_ID", Value: proplet.Spec.ConnectionConfig.ChannelID},
+		{Name: "PROPLET_CLIENT_ID", Value: proplet.Spec.ConnectionConfig.ClientID},
+		{Name: "PROPLET_CLIENT_KEY", Value: proplet.Spec.ConnectionConfig.ClientKey},
+	}
+	if proplet.Spec.K8s.PluginDir != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "PROPLET_PLUGIN_DIR", Value: proplet.Spec.K8s.PluginDir})
+	}
+	return envVars
 }
 
 func (r *PropletReconciler) deploymentNeedsUpdate(current, desired *appsv1.Deployment) bool {
