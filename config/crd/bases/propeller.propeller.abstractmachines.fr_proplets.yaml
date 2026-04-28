@@ -120,6 +120,11 @@ spec:
                     - warn
                     - error
                     type: string
+                  pluginDir:
+                    description: |-
+                      PluginDir is the path inside the proplet container where WASM plugin files are loaded from.
+                      Maps to the PROPLET_PLUGIN_DIR environment variable. Leave empty to disable plugins.
+                    type: string
                   replicas:
                     default: 1
                     format: int32

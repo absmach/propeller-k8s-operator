@@ -61,6 +61,11 @@ spec:
           spec:
             description: spec defines the desired state of Task
             properties:
+              broadcast:
+                description: |-
+                  Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
+                  Mirrors task.Task.Broadcast in the propeller codebase.
+                type: boolean
               cliArgs:
                 items:
                   type: string
@@ -119,6 +124,11 @@ spec:
                   - federated
                 default: standard
                 type: string
+              metadata:
+                description: |-
+                  Metadata is arbitrary key-value data attached to the task.
+                  Must be valid JSON and under 64 KB. Mirrors task.Task.Metadata in the propeller codebase.
+                x-kubernetes-preserve-unknown-fields: true
               mode:
                 enum:
                 - infer
