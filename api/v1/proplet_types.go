@@ -59,6 +59,9 @@ type K8sPropletSpec struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
+	// PluginDir is the path inside the proplet container where WASM plugin files are loaded from.
+	// Maps to the PROPLET_PLUGIN_DIR environment variable. Leave empty to disable plugins.
+	PluginDir string `json:"pluginDir,omitempty"`
 }
 
 // ConnectionConfig defines the MQTT connection configuration for a Proplet.
