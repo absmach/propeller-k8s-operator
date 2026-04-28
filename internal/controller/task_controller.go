@@ -488,11 +488,19 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		"cli_args":          task.Spec.CLIArgs,
 		"env":               env,
 		"daemon":            task.Spec.Daemon,
+		"broadcast":         task.Spec.Broadcast,
 		"mode":              task.Spec.Mode,
 		"encrypted":         task.Spec.Encrypted,
 		"kbs_resource_path": task.Spec.KBSResourcePath,
 		"proplet_id":        propletID,
 		"priority":          task.Spec.Priority,
+	}
+
+	if task.Spec.Metadata != nil {
+		var meta map[string]any
+		if err := json.Unmarshal(task.Spec.Metadata.Raw, &meta); err == nil {
+			payload["metadata"] = meta
+		}
 	}
 
 	if task.Spec.MonitoringProfile != nil {
