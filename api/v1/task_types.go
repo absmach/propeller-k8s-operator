@@ -113,6 +113,9 @@ type TaskSpec struct {
 	ResourceRequirements *PropletResources    `json:"resourceRequirements,omitempty,omitzero"`
 	Env                  map[string]string    `json:"env,omitempty"`
 	Daemon               bool                 `json:"daemon,omitempty"`
+	// Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
+	// Mirrors task.Task.Broadcast in the propeller codebase.
+	Broadcast            bool                 `json:"broadcast,omitempty"`
 	Mode                 TaskMode             `json:"mode,omitempty"`
 	MonitoringProfile    *MonitoringProfile   `json:"monitoringProfile,omitempty"`
 	RestartPolicy        corev1.RestartPolicy `json:"restartPolicy,omitempty"`
@@ -144,6 +147,12 @@ type TaskSpec struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=50
 	Priority int `json:"priority,omitempty"`
+
+	// Metadata is arbitrary key-value data attached to the task.
+	// Must be valid JSON and under 64 KB. Mirrors task.Task.Metadata in the propeller codebase.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Optional
+	Metadata *apiextensionsv1.JSON `json:"metadata,omitempty"`
 }
 
 // MonitoringProfile defines monitoring configuration for task execution
