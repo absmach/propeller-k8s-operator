@@ -510,8 +510,13 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		// Key must be "monitoring_profile" — commit e735acc changed the Rust proplet's
 		// serde rename annotation from "monitoringProfile" back to "monitoring_profile".
 		// Interval is serialised as u64 seconds by the proplet's serde_duration module.
-		profile := map[string]any{
+		intervalSecs := uint64(10) // matches MonitoringProfile::default().interval in Rust
+		if mp.Interval != nil {
+			intervalSecs = uint64(mp.Interval.Duration.Seconds())
+		}
+		payload["monitoring_profile"] = map[string]any{
 			"enabled":                  mp.Enabled,
+			"interval":                 intervalSecs,
 			"collect_cpu":              mp.CollectCPU,
 			"collect_memory":           mp.CollectMemory,
 			"collect_disk_io":          mp.CollectDiskIO,
@@ -521,10 +526,6 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 			"retain_history":           mp.RetainHistory,
 			"history_size":             mp.HistorySize,
 		}
-		if mp.Interval != nil {
-			profile["interval"] = uint64(mp.Interval.Duration.Seconds())
-		}
-		payload["monitoring_profile"] = profile
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {
