@@ -158,10 +158,6 @@ type TaskSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	Metadata *apiextensionsv1.JSON `json:"metadata,omitempty"`
-
-	// Broadcast sends the task to all running proplets simultaneously.
-	// Mutually exclusive with PropletSelector.PropletID.
-	Broadcast bool `json:"broadcast,omitempty"`
 }
 
 // MonitoringProfile defines monitoring configuration for task execution

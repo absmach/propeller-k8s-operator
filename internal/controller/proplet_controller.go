@@ -313,7 +313,6 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 		{Name: "PROPLET_DOMAIN_ID", Value: proplet.Spec.ConnectionConfig.DomainID},
 		{Name: "PROPLET_CHANNEL_ID", Value: proplet.Spec.ConnectionConfig.ChannelID},
 		{Name: "PROPLET_CLIENT_ID", Value: proplet.Spec.ConnectionConfig.ClientID},
-		{Name: "PROPLET_CLIENT_KEY", Value: proplet.Spec.ConnectionConfig.ClientKey},
 	}
 	if proplet.Spec.K8s.PluginDir != "" {
 		envVars = append(envVars, corev1.EnvVar{Name: "PROPLET_PLUGIN_DIR", Value: proplet.Spec.K8s.PluginDir})

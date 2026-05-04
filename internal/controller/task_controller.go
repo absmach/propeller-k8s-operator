@@ -316,18 +316,49 @@ func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propeller
 
 	const scheduledState = 1
 	payload := map[string]any{
-		"id":        string(task.UID),
-		"name":      funcName,
-		"state":     scheduledState,
-		"kind":      task.Spec.Kind,
-		"image_url": task.Spec.ImageURL,
-		"file":      task.Spec.File,
-		"inputs":    task.Spec.Inputs,
-		"cli_args":  task.Spec.CLIArgs,
-		"env":       task.Spec.Env,
-		"daemon":    task.Spec.Daemon,
-		"mode":      task.Spec.Mode,
-		"broadcast": true,
+		"id":                string(task.UID),
+		"name":              funcName,
+		"state":             scheduledState,
+		"kind":              task.Spec.Kind,
+		"image_url":         task.Spec.ImageURL,
+		"file":              task.Spec.File,
+		"inputs":            task.Spec.Inputs,
+		"cli_args":          task.Spec.CLIArgs,
+		"env":               task.Spec.Env,
+		"daemon":            task.Spec.Daemon,
+		"mode":              task.Spec.Mode,
+		"broadcast":         true,
+		"encrypted":         task.Spec.Encrypted,
+		"kbs_resource_path": task.Spec.KBSResourcePath,
+		"priority":          task.Spec.Priority,
+	}
+
+	if task.Spec.Metadata != nil {
+		var meta map[string]any
+		if err := json.Unmarshal(task.Spec.Metadata.Raw, &meta); err != nil {
+			logger.Error(err, "failed to unmarshal task metadata, skipping")
+		} else {
+			payload["metadata"] = meta
+		}
+	}
+
+	if task.Spec.MonitoringProfile != nil {
+		mp := task.Spec.MonitoringProfile
+		profile := map[string]any{
+			"enabled":                  mp.Enabled,
+			"collect_cpu":              mp.CollectCPU,
+			"collect_memory":           mp.CollectMemory,
+			"collect_disk_io":          mp.CollectDiskIO,
+			"collect_threads":          mp.CollectThreads,
+			"collect_file_descriptors": mp.CollectFileDescriptors,
+			"export_to_mqtt":           mp.ExportToMQTT,
+			"retain_history":           mp.RetainHistory,
+			"history_size":             mp.HistorySize,
+		}
+		if mp.Interval != nil {
+			profile["interval"] = uint64(mp.Interval.Duration.Seconds())
+		}
+		payload["monitoring_profile"] = profile
 	}
 
 	if err := r.pubsub.Publish(topic, payload); err != nil {

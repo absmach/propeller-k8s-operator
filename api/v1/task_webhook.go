@@ -115,11 +115,11 @@ func (v *TaskCustomValidator) validateTask(task *Task) error {
 		))
 	}
 
-	// DependsOn requires WorkflowID.
-	if len(task.Spec.DependsOn) > 0 && task.Spec.WorkflowID == "" {
+	// DependsOn requires a grouping identifier (WorkflowID or JobID).
+	if len(task.Spec.DependsOn) > 0 && task.Spec.WorkflowID == "" && task.Spec.JobID == "" {
 		allErrs = append(allErrs, field.Required(
 			field.NewPath("spec", "workflowId"),
-			"workflowId is required when dependsOn is specified",
+			"workflowId or jobId is required when dependsOn is specified",
 		))
 	}
 
