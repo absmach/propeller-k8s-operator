@@ -61,10 +61,10 @@ func (d *TaskCustomDefaulter) Default(_ context.Context, obj runtime.Object) err
 		task.Spec.Kind = TaskKindStandard
 	}
 	if task.Spec.Priority == 0 {
-		task.Spec.Priority = 50
+		task.Spec.Priority = DefaultPriority
 	}
 	if task.Spec.Timezone == "" && task.Spec.Schedule != "" {
-		task.Spec.Timezone = "UTC"
+		task.Spec.Timezone = DefaultTimezone
 	}
 	return nil
 }

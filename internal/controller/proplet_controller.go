@@ -94,6 +94,9 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Apply metrics snapshot unconditionally — metrics arrive on a separate MQTT
+	// topic from heartbeats and must not be gated on heartbeat presence.
+	r.applyPendingPropletMetrics(&proplet)
 	// Must happen before deletion/type-specific logic so the Status().Update()
 	// in each branch persists the freshest heartbeat data.
 	r.applyPendingHeartbeat(&proplet)
@@ -159,10 +162,18 @@ func (r *PropletReconciler) applyPendingHeartbeat(proplet *propellerv1.Proplet) 
 		meta := raw.(propellerv1.PropletMetadata)
 		proplet.Status.Metadata = &meta
 	}
-	if raw, ok := r.pendingPropletMetrics.LoadAndDelete(string(proplet.UID)); ok {
-		snap := raw.(propellerv1.PropletMetricsSnapshot)
-		proplet.Status.LatestMetrics = &snap
+}
+
+// applyPendingPropletMetrics checks pendingPropletMetrics for a snapshot stored
+// by the MQTT metrics handler and applies it to the in-memory proplet object.
+// Called unconditionally in Reconcile so metrics events are never stranded.
+func (r *PropletReconciler) applyPendingPropletMetrics(proplet *propellerv1.Proplet) {
+	raw, ok := r.pendingPropletMetrics.LoadAndDelete(string(proplet.UID))
+	if !ok {
+		return
 	}
+	snap := raw.(propellerv1.PropletMetricsSnapshot)
+	proplet.Status.LatestMetrics = &snap
 }
 
 func (r *PropletReconciler) handlePropletDeletion(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {

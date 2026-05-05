@@ -918,7 +918,7 @@ func (r *TaskReconciler) mqttResultHandler(ctx context.Context, msg map[string]a
 // reconcile loop picks it up.
 func (r *TaskReconciler) enqueueTaskByUID(ctx context.Context, taskUID string, update mqttTaskUpdate) error {
 	var tasks propellerapiv1.TaskList
-	if err := r.List(ctx, &tasks); err != nil {
+	if err := r.List(ctx, &tasks, client.InNamespace(r.Namespace)); err != nil {
 		return err
 	}
 

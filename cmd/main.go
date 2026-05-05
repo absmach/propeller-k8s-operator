@@ -241,6 +241,11 @@ func main() {
 	}
 
 	watchNamespace := os.Getenv("WATCH_NAMESPACE")
+	if watchNamespace == "" {
+		setupLog.Info("WATCH_NAMESPACE not set; watching all namespaces")
+	} else {
+		setupLog.Info("watching single namespace", "namespace", watchNamespace)
+	}
 
 	if err := (&controller.PropletReconciler{
 		Client:    mgr.GetClient(),
