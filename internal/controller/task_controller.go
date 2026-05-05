@@ -403,7 +403,7 @@ func (r *TaskReconciler) evaluateDeps(ctx context.Context, task *propellerapiv1.
 	if !allTerminal {
 		return false, false, nil
 	}
-	shouldSkip := dag.ShouldSkip(task.Spec.DependsOn, task.Spec.RunIf, completed, failed)
+	shouldSkip := dag.ShouldSkip(task.Spec.DependsOn, string(task.Spec.RunIf), completed, failed)
 	return true, shouldSkip, nil
 }
 
@@ -483,7 +483,14 @@ func (r *TaskReconciler) handleTerminal(ctx context.Context, task *propellerapiv
 		if tz == "" {
 			tz = "UTC"
 		}
-		next := propellercron.CalculateNextRun(sched, time.Now(), tz)
+		// Use FinishedAt as the base so next-run is aligned to when the task
+		// actually completed, not when the reconcile loop happened to wake up.
+		// Fall back to time.Now() only if FinishedAt was not recorded.
+		base := time.Now()
+		if task.Status.FinishedAt != nil {
+			base = task.Status.FinishedAt.Time
+		}
+		next := propellercron.CalculateNextRun(sched, base, tz)
 		t := metav1.NewTime(next)
 		task.Status.NextRun = &t
 		if err := r.Status().Update(ctx, task); err != nil {

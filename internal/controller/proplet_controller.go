@@ -692,6 +692,9 @@ func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg m
 		if v, ok := memData["rss_bytes"].(float64); ok {
 			snap.MemoryBytes = uint64(v)
 		}
+		if v, ok := memData["percent"].(float64); ok {
+			snap.MemoryMilliPercent = int64(v * 1000)
+		}
 	}
 
 	var proplets propellerv1.PropletList

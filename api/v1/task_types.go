@@ -36,6 +36,8 @@ type (
 	TaskKind string
 	// +kubebuilder:validation:Enum=infer;train
 	TaskMode string
+	// +kubebuilder:validation:Enum=success;failure
+	RunIfCondition string
 )
 
 const (
@@ -61,8 +63,8 @@ const (
 	TaskModeInfer TaskMode = "infer"
 	TaskModeTrain TaskMode = "train"
 
-	RunIfSuccess = "success"
-	RunIfFailure = "failure"
+	RunIfSuccess RunIfCondition = "success"
+	RunIfFailure RunIfCondition = "failure"
 )
 
 const DefaultPriority = 50
@@ -134,7 +136,7 @@ type TaskSpec struct {
 	DependsOn []string `json:"dependsOn,omitempty"`
 	// RunIf specifies when to run: "success" (default) or "failure"
 	// +kubebuilder:validation:Enum=success;failure
-	RunIf string `json:"runIf,omitempty"`
+	RunIf RunIfCondition `json:"runIf,omitempty"`
 	// WorkflowID groups tasks into a workflow for DAG execution
 	WorkflowID string `json:"workflowId,omitempty"`
 	// JobID groups tasks into a job for batch execution
