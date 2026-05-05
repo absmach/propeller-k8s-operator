@@ -52,6 +52,7 @@ const aliveHistoryLimit = 10
 type PropletReconciler struct {
 	client.Client
 	Scheme             *runtime.Scheme
+	Namespace          string
 	livelinessInterval time.Duration
 	lastSeenThreshold  time.Duration
 	pubsub             mqtt.PubSub
@@ -562,7 +563,7 @@ func (r *PropletReconciler) removeCondition(proplet *propellerv1.Proplet, condit
 
 func (r *PropletReconciler) updateTaskCount(ctx context.Context, proplet *propellerv1.Proplet) error {
 	var tasks propellerv1.TaskList
-	if err := r.List(ctx, &tasks); err != nil {
+	if err := r.List(ctx, &tasks, client.InNamespace(proplet.Namespace)); err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
 
@@ -599,7 +600,7 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	}
 
 	var proplets propellerv1.PropletList
-	if err := r.List(ctx, &proplets); err != nil {
+	if err := r.List(ctx, &proplets, client.InNamespace(r.Namespace)); err != nil {
 		return err
 	}
 
@@ -683,7 +684,7 @@ func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg m
 	}
 
 	var proplets propellerv1.PropletList
-	if err := r.List(ctx, &proplets); err != nil {
+	if err := r.List(ctx, &proplets, client.InNamespace(r.Namespace)); err != nil {
 		return err
 	}
 	for i := range proplets.Items {

@@ -240,16 +240,20 @@ func main() {
 		setupLog.Info("MQTT not configured; external proplet dispatch and liveness tracking disabled")
 	}
 
+	watchNamespace := os.Getenv("WATCH_NAMESPACE")
+
 	if err := (&controller.PropletReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
 	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
 		os.Exit(1)
 	}
 	if err := (&controller.TaskReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
 	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)

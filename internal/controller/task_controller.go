@@ -68,6 +68,7 @@ type TaskReconciler struct {
 	client.Client
 
 	Scheme    *runtime.Scheme
+	Namespace string
 	sched     scheduler.Scheduler
 	pubsub    mqtt.PubSub
 	domainID  string
@@ -864,7 +865,7 @@ func (r *TaskReconciler) mqttTaskMetricsHandler(ctx context.Context, msg map[str
 
 	// Find the Task with this UID and enqueue a reconcile.
 	var tasks propellerapiv1.TaskList
-	if err := r.List(ctx, &tasks); err != nil {
+	if err := r.List(ctx, &tasks, client.InNamespace(r.Namespace)); err != nil {
 		return err
 	}
 	for i := range tasks.Items {
