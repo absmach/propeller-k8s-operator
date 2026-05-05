@@ -135,7 +135,6 @@ type TaskSpec struct {
 	// DependsOn specifies task IDs that must complete before this task runs
 	DependsOn []string `json:"dependsOn,omitempty"`
 	// RunIf specifies when to run: "success" (default) or "failure"
-	// +kubebuilder:validation:Enum=success;failure
 	RunIf RunIfCondition `json:"runIf,omitempty"`
 	// WorkflowID groups tasks into a workflow for DAG execution
 	WorkflowID string `json:"workflowId,omitempty"`
