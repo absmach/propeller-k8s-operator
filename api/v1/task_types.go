@@ -36,6 +36,8 @@ type (
 	TaskKind string
 	// +kubebuilder:validation:Enum=infer;train
 	TaskMode string
+	// +kubebuilder:validation:Enum=success;failure
+	RunIfCondition string
 )
 
 const (
@@ -61,7 +63,12 @@ const (
 	TaskModeInfer TaskMode = "infer"
 	TaskModeTrain TaskMode = "train"
 
+	RunIfSuccess RunIfCondition = "success"
+	RunIfFailure RunIfCondition = "failure"
 )
+
+const DefaultPriority = 50
+const DefaultTimezone = "UTC"
 
 type PropletSelector struct {
 	PropletID         string            `json:"propletId,omitempty"`
@@ -98,27 +105,27 @@ type TaskSpec struct {
 	FunctionName string `json:"functionName,omitempty"`
 	// +kubebuilder:validation:Enum=standard;federated
 	// +kubebuilder:default="standard"
-	Kind            TaskKind         `json:"kind,omitempty"`
-	ImageURL        string           `json:"imageUrl,omitempty"`
-	File            []byte           `json:"file,omitempty"`
-	CLIArgs []string `json:"cliArgs,omitempty"`
+	Kind     TaskKind `json:"kind,omitempty"`
+	ImageURL string   `json:"imageUrl,omitempty"`
+	File     []byte   `json:"file,omitempty"`
+	CLIArgs  []string `json:"cliArgs,omitempty"`
 	// Inputs are task input arguments. Each element is a string but numeric
 	// values are accepted and coerced — matching the FlexStrings behaviour of
 	// the main propeller manager.
-	Inputs []string `json:"inputs,omitempty"`
+	Inputs          []string         `json:"inputs,omitempty"`
 	PropletSelector *PropletSelector `json:"propletSelector,omitempty,omitzero"`
 	// +kubebuilder:validation:Enum=k8s;external;any
 	// +kubebuilder:default="any"
-	PreferredPropletType PropletKind          `json:"preferredPropletType,omitempty"`
-	ResourceRequirements *PropletResources    `json:"resourceRequirements,omitempty,omitzero"`
-	Env                  map[string]string    `json:"env,omitempty"`
-	Daemon               bool                 `json:"daemon,omitempty"`
+	PreferredPropletType PropletKind       `json:"preferredPropletType,omitempty"`
+	ResourceRequirements *PropletResources `json:"resourceRequirements,omitempty,omitzero"`
+	Env                  map[string]string `json:"env,omitempty"`
+	Daemon               bool              `json:"daemon,omitempty"`
 	// Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
 	// Mirrors task.Task.Broadcast in the propeller codebase.
-	Broadcast            bool                 `json:"broadcast,omitempty"`
-	Mode                 TaskMode             `json:"mode,omitempty"`
-	MonitoringProfile    *MonitoringProfile   `json:"monitoringProfile,omitempty"`
-	RestartPolicy        corev1.RestartPolicy `json:"restartPolicy,omitempty"`
+	Broadcast         bool                 `json:"broadcast,omitempty"`
+	Mode              TaskMode             `json:"mode,omitempty"`
+	MonitoringProfile *MonitoringProfile   `json:"monitoringProfile,omitempty"`
+	RestartPolicy     corev1.RestartPolicy `json:"restartPolicy,omitempty"`
 
 	// Confidential computing fields
 	Encrypted       bool   `json:"encrypted,omitempty"`
@@ -128,8 +135,7 @@ type TaskSpec struct {
 	// DependsOn specifies task IDs that must complete before this task runs
 	DependsOn []string `json:"dependsOn,omitempty"`
 	// RunIf specifies when to run: "success" (default) or "failure"
-	// +kubebuilder:validation:Enum=success;failure
-	RunIf string `json:"runIf,omitempty"`
+	RunIf RunIfCondition `json:"runIf,omitempty"`
 	// WorkflowID groups tasks into a workflow for DAG execution
 	WorkflowID string `json:"workflowId,omitempty"`
 	// JobID groups tasks into a job for batch execution
@@ -195,6 +201,8 @@ type TaskStatus struct {
 	Results    *apiextensionsv1.JSON `json:"results,omitempty"`
 	Error      string                `json:"error,omitempty"`
 	Conditions []TaskCondition       `json:"conditions,omitzero"`
+	// LatestMetrics is the most recent metrics sample reported by the proplet for this task.
+	LatestMetrics *TaskMetricsSnapshot `json:"latestMetrics,omitempty"`
 }
 
 // +kubebuilder:object:root=true

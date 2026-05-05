@@ -52,6 +52,7 @@ const aliveHistoryLimit = 10
 type PropletReconciler struct {
 	client.Client
 	Scheme             *runtime.Scheme
+	Namespace          string
 	livelinessInterval time.Duration
 	lastSeenThreshold  time.Duration
 	pubsub             mqtt.PubSub
@@ -67,6 +68,14 @@ type PropletReconciler struct {
 	// proplet, keyed by its Kubernetes UID.  Written by the MQTT goroutine
 	// and consumed (LoadAndDelete) inside Reconcile.
 	pendingHeartbeats sync.Map
+
+	// pendingMetadata stores metadata reported by the proplet over MQTT, keyed
+	// by Kubernetes UID.  Written by MQTT handlers, consumed inside Reconcile.
+	pendingMetadata sync.Map
+
+	// pendingPropletMetrics stores the latest proplet-level metrics snapshot,
+	// keyed by Kubernetes UID.
+	pendingPropletMetrics sync.Map
 }
 
 // +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list;watch;create;update;patch;delete
@@ -85,6 +94,9 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Apply metrics snapshot unconditionally — metrics arrive on a separate MQTT
+	// topic from heartbeats and must not be gated on heartbeat presence.
+	r.applyPendingPropletMetrics(&proplet)
 	// Must happen before deletion/type-specific logic so the Status().Update()
 	// in each branch persists the freshest heartbeat data.
 	r.applyPendingHeartbeat(&proplet)
@@ -129,9 +141,9 @@ func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // applyPendingHeartbeat checks the pendingHeartbeats map for a timestamp stored
-// by the MQTT liveness handler and, if present, updates LastSeen and AliveHistory
-// on the in-memory proplet object.  The caller is responsible for persisting
-// these changes via Status().Update().
+// by the MQTT liveness handler and, if present, updates LastSeen, AliveHistory,
+// and Alive on the in-memory proplet object.  The caller is responsible
+// for persisting these changes via Status().Update().
 func (r *PropletReconciler) applyPendingHeartbeat(proplet *propellerv1.Proplet) {
 	ts, ok := r.pendingHeartbeats.LoadAndDelete(string(proplet.UID))
 	if !ok {
@@ -143,6 +155,25 @@ func (r *PropletReconciler) applyPendingHeartbeat(proplet *propellerv1.Proplet) 
 	if len(proplet.Status.AliveHistory) > aliveHistoryLimit {
 		proplet.Status.AliveHistory = proplet.Status.AliveHistory[len(proplet.Status.AliveHistory)-aliveHistoryLimit:]
 	}
+
+	proplet.Status.Alive = true
+
+	if raw, ok := r.pendingMetadata.LoadAndDelete(string(proplet.UID)); ok {
+		meta := raw.(propellerv1.PropletMetadata)
+		proplet.Status.Metadata = &meta
+	}
+}
+
+// applyPendingPropletMetrics checks pendingPropletMetrics for a snapshot stored
+// by the MQTT metrics handler and applies it to the in-memory proplet object.
+// Called unconditionally in Reconcile so metrics events are never stranded.
+func (r *PropletReconciler) applyPendingPropletMetrics(proplet *propellerv1.Proplet) {
+	raw, ok := r.pendingPropletMetrics.LoadAndDelete(string(proplet.UID))
+	if !ok {
+		return
+	}
+	snap := raw.(propellerv1.PropletMetricsSnapshot)
+	proplet.Status.LatestMetrics = &snap
 }
 
 func (r *PropletReconciler) handlePropletDeletion(ctx context.Context, proplet *propellerv1.Proplet) (ctrl.Result, error) {
@@ -294,11 +325,25 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 		{Name: "PROPLET_DOMAIN_ID", Value: proplet.Spec.ConnectionConfig.DomainID},
 		{Name: "PROPLET_CHANNEL_ID", Value: proplet.Spec.ConnectionConfig.ChannelID},
 		{Name: "PROPLET_CLIENT_ID", Value: proplet.Spec.ConnectionConfig.ClientID},
-		{Name: "PROPLET_CLIENT_KEY", Value: proplet.Spec.ConnectionConfig.ClientKey},
 	}
 	if proplet.Spec.K8s.PluginDir != "" {
 		envVars = append(envVars, corev1.EnvVar{Name: "PROPLET_PLUGIN_DIR", Value: proplet.Spec.K8s.PluginDir})
 	}
+
+	if proplet.Spec.ConnectionConfig.ClientKeySecretRef != nil {
+		envVars = append(envVars, corev1.EnvVar{
+			Name: "PROPLET_CLIENT_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: proplet.Spec.ConnectionConfig.ClientKeySecretRef,
+			},
+		})
+	} else {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "PROPLET_CLIENT_KEY",
+			Value: proplet.Spec.ConnectionConfig.ClientKey,
+		})
+	}
+
 	return envVars
 }
 
@@ -403,12 +448,14 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		timeSinceLastSeen := time.Since(proplet.Status.LastSeen.Time)
 		if timeSinceLastSeen > r.lastSeenThreshold {
 			proplet.Status.Phase = propellerv1.PropletOfflinePhase
+			proplet.Status.Alive = false
 			r.setCondition(proplet, propellerv1.PropletConditionConnected, metav1.ConditionFalse, "PropletOffline",
 				fmt.Sprintf("offline for %s (threshold: %s)", timeSinceLastSeen, r.lastSeenThreshold))
 			r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionFalse, "PropletOffline",
 				"external proplet is offline")
 		} else {
 			proplet.Status.Phase = propellerv1.PropletRunningPhase
+			proplet.Status.Alive = true
 			r.setCondition(proplet, propellerv1.PropletConditionConnected, metav1.ConditionTrue, "PropletOnline",
 				fmt.Sprintf("last seen %s ago", timeSinceLastSeen))
 			r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionTrue, "PropletReady",
@@ -416,6 +463,7 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 		}
 	default:
 		proplet.Status.Phase = propellerv1.PropletInitializingPhase
+		proplet.Status.Alive = false
 		r.setCondition(proplet, propellerv1.PropletConditionReady, metav1.ConditionFalse, "PropletInitializing",
 			"waiting for first heartbeat")
 		r.removeCondition(proplet, propellerv1.PropletConditionConnected)
@@ -526,7 +574,7 @@ func (r *PropletReconciler) removeCondition(proplet *propellerv1.Proplet, condit
 
 func (r *PropletReconciler) updateTaskCount(ctx context.Context, proplet *propellerv1.Proplet) error {
 	var tasks propellerv1.TaskList
-	if err := r.List(ctx, &tasks); err != nil {
+	if err := r.List(ctx, &tasks, client.InNamespace(proplet.Namespace)); err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
 
@@ -551,7 +599,6 @@ func (r *PropletReconciler) updateTaskCount(ctx context.Context, proplet *propel
 	return nil
 }
 
-
 // mqttLivenessHandler is invoked by the MQTT goroutine for every heartbeat
 // message on the /control/proplet/alive topic.  It must not write to the
 // Kubernetes API directly.  Instead it:
@@ -564,7 +611,7 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	}
 
 	var proplets propellerv1.PropletList
-	if err := r.List(ctx, &proplets); err != nil {
+	if err := r.List(ctx, &proplets, client.InNamespace(r.Namespace)); err != nil {
 		return err
 	}
 
@@ -574,6 +621,12 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 		}
 		p := &proplets.Items[i]
 		r.pendingHeartbeats.Store(string(p.UID), metav1.Now())
+
+		// Parse and store metadata if present in the heartbeat message.
+		if meta, ok := msg["metadata"].(map[string]any); ok {
+			r.pendingMetadata.Store(string(p.UID), parsePropletMetadata(meta))
+		}
+
 		select {
 		case r.propletEvents <- event.GenericEvent{Object: p}:
 		default:
@@ -583,6 +636,83 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	}
 
 	// Proplet not yet registered — ignore.
+	return nil
+}
+
+// parsePropletMetadata converts the raw MQTT metadata map to PropletMetadata.
+func parsePropletMetadata(m map[string]any) propellerv1.PropletMetadata {
+	getString := func(key string) string {
+		v, _ := m[key].(string)
+		return v
+	}
+	getUint64 := func(key string) uint64 {
+		v, _ := m[key].(float64)
+		return uint64(v)
+	}
+	var tags []string
+	if raw, ok := m["tags"].([]any); ok {
+		for _, t := range raw {
+			if s, ok := t.(string); ok {
+				tags = append(tags, s)
+			}
+		}
+	}
+	return propellerv1.PropletMetadata{
+		Description:      getString("description"),
+		Tags:             tags,
+		Location:         getString("location"),
+		IP:               getString("ip"),
+		Environment:      getString("environment"),
+		OS:               getString("os"),
+		Hostname:         getString("hostname"),
+		CPUArch:          getString("cpu_arch"),
+		TotalMemoryBytes: getUint64("total_memory_bytes"),
+		PropletVersion:   getString("proplet_version"),
+		WasmRuntime:      getString("wasm_runtime"),
+	}
+}
+
+// mqttPropletMetricsHandler handles messages on /control/proplet/metrics.
+func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg map[string]any) error {
+	propletClientID, ok := msg["proplet_id"].(string)
+	if !ok || propletClientID == "" {
+		return nil
+	}
+
+	snap := propellerv1.PropletMetricsSnapshot{}
+	now := metav1.Now()
+	snap.Timestamp = &now
+
+	if cpuData, ok := msg["cpu_metrics"].(map[string]any); ok {
+		if v, ok := cpuData["percent"].(float64); ok {
+			snap.CPUMilliPercent = int64(v * 1000)
+		}
+	}
+	if memData, ok := msg["memory_metrics"].(map[string]any); ok {
+		if v, ok := memData["rss_bytes"].(float64); ok {
+			snap.MemoryBytes = uint64(v)
+		}
+		if v, ok := memData["percent"].(float64); ok {
+			snap.MemoryMilliPercent = int64(v * 1000)
+		}
+	}
+
+	var proplets propellerv1.PropletList
+	if err := r.List(ctx, &proplets, client.InNamespace(r.Namespace)); err != nil {
+		return err
+	}
+	for i := range proplets.Items {
+		if proplets.Items[i].Spec.ConnectionConfig.ClientID != propletClientID {
+			continue
+		}
+		p := &proplets.Items[i]
+		r.pendingPropletMetrics.Store(string(p.UID), snap)
+		select {
+		case r.propletEvents <- event.GenericEvent{Object: p}:
+		default:
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -596,13 +726,21 @@ func (r *PropletReconciler) SetupWithManager(
 	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
 	r.propletEvents = make(chan event.GenericEvent, 256)
 
-	// Subscribe only to the liveness topic; task result topics are handled by
-	// TaskReconciler to respect separation of responsibilities.
+	// Subscribe to liveness and proplet-level metrics topics. Task result topics
+	// are handled by TaskReconciler to respect separation of responsibilities.
 	if r.pubsub != nil {
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/alive",
 			func(_ string, msg map[string]any) error {
 				return r.mqttLivenessHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/metrics",
+			func(_ string, msg map[string]any) error {
+				return r.mqttPropletMetricsHandler(context.Background(), msg)
 			},
 		); err != nil {
 			return err

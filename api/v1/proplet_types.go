@@ -21,6 +21,44 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// PropletMetadata holds runtime metadata reported by a proplet over MQTT.
+type PropletMetadata struct {
+	Description      string   `json:"description,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	Location         string   `json:"location,omitempty"`
+	IP               string   `json:"ip,omitempty"`
+	Environment      string   `json:"environment,omitempty"`
+	OS               string   `json:"os,omitempty"`
+	Hostname         string   `json:"hostname,omitempty"`
+	CPUArch          string   `json:"cpuArch,omitempty"`
+	TotalMemoryBytes uint64   `json:"totalMemoryBytes,omitempty"`
+	PropletVersion   string   `json:"propletVersion,omitempty"`
+	WasmRuntime      string   `json:"wasmRuntime,omitempty"`
+}
+
+// PropletMetricsSnapshot holds the latest metrics sample received from a proplet.
+// CPU and memory percentages are stored as millipercent (value × 1000) to avoid
+// floating-point fields which are not well-supported in CRD schemas.
+type PropletMetricsSnapshot struct {
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
+	// CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000 = 50 %).
+	CPUMilliPercent int64 `json:"cpuMilliPercent,omitempty"`
+	// MemoryMilliPercent is memory utilisation × 1000.
+	MemoryMilliPercent int64  `json:"memoryMilliPercent,omitempty"`
+	MemoryBytes        uint64 `json:"memoryBytes,omitempty"`
+}
+
+// TaskMetricsSnapshot holds the latest metrics sample for a running task.
+// CPU and memory percentages are stored as millipercent (value × 1000).
+type TaskMetricsSnapshot struct {
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
+	// CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000 = 50 %).
+	CPUMilliPercent int64 `json:"cpuMilliPercent,omitempty"`
+	// MemoryMilliPercent is memory utilisation × 1000.
+	MemoryMilliPercent int64  `json:"memoryMilliPercent,omitempty"`
+	MemoryBytes        uint64 `json:"memoryBytes,omitempty"`
+}
+
 type (
 	// +kubebuilder:validation:Enum=Initializing;Running;Offline
 	PropletPhase string
@@ -75,9 +113,13 @@ type ConnectionConfig struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientId"`
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	ClientKey string `json:"clientKey"`
+	// ClientKey is the MQTT client secret. Exactly one of ClientKey or
+	// ClientKeySecretRef must be set.
+	ClientKey string `json:"clientKey,omitempty"`
+	// ClientKeySecretRef references a Kubernetes Secret whose key holds the
+	// MQTT client secret. Exactly one of ClientKey or ClientKeySecretRef must
+	// be set.
+	ClientKeySecretRef *corev1.SecretKeySelector `json:"clientKeySecretRef,omitempty"`
 	// +kubebuilder:validation:Required
 	MQTTAddress string `json:"mqttAddress"`
 	// +kubebuilder:default="30s"
@@ -130,12 +172,17 @@ type PropletStatus struct {
 	Phase      PropletPhase       `json:"phase"`
 	Conditions []PropletCondition `json:"conditions,omitempty"`
 	LastSeen   *metav1.Time       `json:"lastSeen,omitempty"`
+	Alive      bool               `json:"alive"`
 	// AliveHistory stores recent heartbeat timestamps for liveness tracking
 	AliveHistory []metav1.Time `json:"aliveHistory,omitempty"`
 	// +kubebuilder:default=0
 	TaskCount          uint64            `json:"taskCount"`
 	AvailableResources *PropletResources `json:"availableResources,omitempty"`
 	K8sStatus          *K8sStatus        `json:"k8sStatus,omitempty"`
+	// Metadata holds runtime information reported by the proplet over MQTT.
+	Metadata *PropletMetadata `json:"metadata,omitempty"`
+	// LatestMetrics is the most recent metrics sample received from the proplet.
+	LatestMetrics *PropletMetricsSnapshot `json:"latestMetrics,omitempty"`
 }
 
 // +kubebuilder:object:root=true

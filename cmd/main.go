@@ -240,16 +240,25 @@ func main() {
 		setupLog.Info("MQTT not configured; external proplet dispatch and liveness tracking disabled")
 	}
 
+	watchNamespace := os.Getenv("WATCH_NAMESPACE")
+	if watchNamespace == "" {
+		setupLog.Info("WATCH_NAMESPACE not set; watching all namespaces")
+	} else {
+		setupLog.Info("watching single namespace", "namespace", watchNamespace)
+	}
+
 	if err := (&controller.PropletReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
 	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
 		os.Exit(1)
 	}
 	if err := (&controller.TaskReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
 	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
@@ -273,6 +282,15 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PropellerJob")
+		os.Exit(1)
+	}
+
+	if err := propellerv1.SetupTaskWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Task")
+		os.Exit(1)
+	}
+	if err := propellerv1.SetupPropletWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Proplet")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

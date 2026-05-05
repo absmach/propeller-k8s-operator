@@ -69,11 +69,10 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if job.Status.Phase == "" {
+		now := metav1.Now()
 		job.Status.Phase = propellerapiv1.JobPhasePending
-		// TaskCount includes both inline Tasks (created by this controller) and
-		// TaskRefs (pre-existing external tasks that this job monitors but does
-		// not create).  Including TaskRefs ensures a TaskRefs-only job does not
-		// immediately complete with 0/0 when it enters Running.
+		job.Status.CreatedAt = &now
+		job.Status.UpdatedAt = &now
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
 		if err := r.Status().Update(ctx, job); err != nil {
 			return ctrl.Result{}, err
@@ -120,6 +119,7 @@ func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propell
 	now := metav1.Now()
 	job.Status.Phase = propellerapiv1.JobPhaseRunning
 	job.Status.StartTime = &now
+	job.Status.UpdatedAt = &now
 	if err := r.Status().Update(ctx, job); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -135,7 +135,7 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 		return ctrl.Result{}, err
 	}
 
-	var completed, failed, skipped int
+	var completed, failed, skipped, interrupted int
 	for _, t := range taskList.Items {
 		switch t.Status.Phase {
 		case propellerapiv1.TaskCompletedPhase:
@@ -144,6 +144,8 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 			failed++
 		case propellerapiv1.TaskSkippedPhase:
 			skipped++
+		case propellerapiv1.TaskInterruptedPhase:
+			interrupted++
 		}
 	}
 
@@ -159,15 +161,20 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 			failed++
 		case propellerapiv1.TaskSkippedPhase:
 			skipped++
+		case propellerapiv1.TaskInterruptedPhase:
+			interrupted++
 		}
 	}
 
 	job.Status.CompletedCount = completed
 	job.Status.FailedCount = failed
 	job.Status.SkippedCount = skipped
+	job.Status.InterruptedCount = interrupted
+	now := metav1.Now()
 
 	if job.Spec.ExecutionMode == propellerapiv1.ExecutionModeSequential {
 		if result, err := r.advanceSequential(ctx, job, taskList); err != nil || result.RequeueAfter > 0 {
+			job.Status.UpdatedAt = &now
 			if updateErr := r.Status().Update(ctx, job); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
@@ -176,12 +183,12 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	}
 
 	totalTasks := job.Status.TaskCount
-	finishedTasks := completed + failed + skipped
+	finishedTasks := completed + failed + skipped + interrupted
 
 	if finishedTasks >= totalTasks {
-		now := metav1.Now()
 		job.Status.FinishTime = &now
-		if failed > 0 {
+		job.Status.UpdatedAt = &now
+		if failed > 0 || interrupted > 0 {
 			job.Status.Phase = propellerapiv1.JobPhaseFailed
 		} else {
 			job.Status.Phase = propellerapiv1.JobPhaseCompleted

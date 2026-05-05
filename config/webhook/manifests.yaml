@@ -1,0 +1,72 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-propeller-propeller-abstractmachines-fr-v1-task
+  failurePolicy: Fail
+  name: mtask-v1.kb.io
+  rules:
+  - apiGroups:
+    - propeller.propeller.abstractmachines.fr
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - tasks
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-propeller-propeller-abstractmachines-fr-v1-proplet
+  failurePolicy: Fail
+  name: vproplet-v1.kb.io
+  rules:
+  - apiGroups:
+    - propeller.propeller.abstractmachines.fr
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - proplets
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-propeller-propeller-abstractmachines-fr-v1-task
+  failurePolicy: Fail
+  name: vtask-v1.kb.io
+  rules:
+  - apiGroups:
+    - propeller.propeller.abstractmachines.fr
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - tasks
+  sideEffects: None

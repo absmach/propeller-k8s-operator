@@ -59,13 +59,16 @@ type PropellerJobSpec struct {
 // PropellerJobStatus defines the observed state of PropellerJob
 type PropellerJobStatus struct {
 	// +kubebuilder:default="Pending"
-	Phase          JobPhase     `json:"phase"`
-	StartTime      *metav1.Time `json:"startTime,omitempty"`
-	FinishTime     *metav1.Time `json:"finishTime,omitempty"`
-	TaskCount      int          `json:"taskCount,omitempty"`
-	CompletedCount int          `json:"completedCount,omitempty"`
-	FailedCount    int          `json:"failedCount,omitempty"`
-	SkippedCount   int          `json:"skippedCount,omitempty"`
+	Phase            JobPhase     `json:"phase"`
+	StartTime        *metav1.Time `json:"startTime,omitempty"`
+	FinishTime       *metav1.Time `json:"finishTime,omitempty"`
+	CreatedAt        *metav1.Time `json:"createdAt,omitempty"`
+	UpdatedAt        *metav1.Time `json:"updatedAt,omitempty"`
+	TaskCount        int          `json:"taskCount,omitempty"`
+	CompletedCount   int          `json:"completedCount,omitempty"`
+	FailedCount      int          `json:"failedCount,omitempty"`
+	SkippedCount     int          `json:"skippedCount,omitempty"`
+	InterruptedCount int          `json:"interruptedCount,omitempty"`
 	// Conditions represent the latest available observations of the job's state
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

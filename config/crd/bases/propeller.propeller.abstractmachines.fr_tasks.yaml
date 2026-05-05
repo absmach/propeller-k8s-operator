@@ -280,6 +280,26 @@ spec:
               finishedAt:
                 format: date-time
                 type: string
+              latestMetrics:
+                description: LatestMetrics is the most recent metrics sample reported
+                  by the proplet for this task.
+                properties:
+                  cpuMilliPercent:
+                    description: CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000
+                      = 50 %).
+                    format: int64
+                    type: integer
+                  memoryBytes:
+                    format: int64
+                    type: integer
+                  memoryMilliPercent:
+                    description: MemoryMilliPercent is memory utilisation × 1000.
+                    format: int64
+                    type: integer
+                  timestamp:
+                    format: date-time
+                    type: string
+                type: object
               nextRun:
                 description: NextRun is the next scheduled execution time for recurring
                   tasks
