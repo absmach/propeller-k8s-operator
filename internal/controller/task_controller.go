@@ -357,7 +357,7 @@ func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propeller
 			"history_size":             mp.HistorySize,
 		}
 		if mp.Interval != nil {
-			profile["interval"] = uint64(mp.Interval.Duration.Seconds())
+			profile["interval"] = uint64(mp.Interval.Seconds())
 		}
 		payload["monitoring_profile"] = profile
 	}
@@ -706,7 +706,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		// Interval is serialised as u64 seconds by the proplet's serde_duration module.
 		intervalSecs := uint64(10) // matches MonitoringProfile::default().interval in Rust
 		if mp.Interval != nil {
-			intervalSecs = uint64(mp.Interval.Duration.Seconds())
+			intervalSecs = uint64(mp.Interval.Seconds())
 		}
 		payload["monitoring_profile"] = map[string]any{
 			"enabled":                  mp.Enabled,

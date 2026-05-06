@@ -229,8 +229,8 @@ func (r *TrainingRoundReconciler) handleRunning(ctx context.Context, round *prop
 		return ctrl.Result{}, r.Status().Update(ctx, round)
 	}
 
-	if result, timedOut, err := r.checkTimeout(ctx, round, updatesReceived); timedOut {
-		return result, err
+	if timedOut, err := r.checkTimeout(ctx, round, updatesReceived); timedOut {
+		return ctrl.Result{}, err
 	}
 
 	return r.updateStatusAndRequeue(ctx, round, time.Second*10)
@@ -358,20 +358,20 @@ func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, r
 	return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 }
 
-// checkTimeout returns (result, timedOut, err). When timedOut is true the
-// caller must return immediately; err holds any Status().Update failure so it
-// is not silently discarded.
-func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerapiv1.TrainingRound, updatesReceived int) (ctrl.Result, bool, error) {
+// checkTimeout returns (timedOut, err). When timedOut is true the caller must
+// return immediately; err holds any Status().Update failure so it is not
+// silently discarded.
+func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerapiv1.TrainingRound, updatesReceived int) (bool, error) {
 	if round.Spec.TimeoutSeconds <= 0 || round.Status.StartTime == nil {
-		return ctrl.Result{}, false, nil
+		return false, nil
 	}
 	elapsed := time.Since(round.Status.StartTime.Time)
 	if elapsed <= time.Duration(round.Spec.TimeoutSeconds)*time.Second {
-		return ctrl.Result{}, false, nil
+		return false, nil
 	}
 	round.Status.Phase = phaseFailed
 	r.updateCondition(round, "False", "Timeout", fmt.Sprintf("Round timed out: only %d/%d updates received", updatesReceived, round.Spec.KOfN))
-	return ctrl.Result{}, true, r.Status().Update(ctx, round)
+	return true, r.Status().Update(ctx, round)
 }
 
 func (r *TrainingRoundReconciler) aggregateUpdates(ctx context.Context, round *propellerapiv1.TrainingRound, collectedUpdates []UpdateEnvelope, algorithm string) string {
