@@ -18,8 +18,8 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .spec.functionName
-      name: Function
+    - jsonPath: .spec.mode
+      name: Mode
       type: string
     - jsonPath: .status.assignedProplet
       name: Proplet
@@ -61,23 +61,104 @@ spec:
           spec:
             description: spec defines the desired state of Task
             properties:
+              broadcast:
+                description: |-
+                  Broadcast sends the task to all available proplets simultaneously instead of a single selected one.
+                  Mirrors task.Task.Broadcast in the propeller codebase.
+                type: boolean
               cliArgs:
                 items:
                   type: string
                 type: array
+              daemon:
+                type: boolean
+              dependsOn:
+                description: |-
+                  Workflow/DAG fields
+                  DependsOn specifies task IDs that must complete before this task runs
+                items:
+                  type: string
+                type: array
+              encrypted:
+                description: Confidential computing fields
+                type: boolean
+              env:
+                additionalProperties:
+                  type: string
+                type: object
               file:
                 format: byte
                 type: string
               functionName:
-                minLength: 1
+                description: |-
+                  FunctionName is the name of the WASM function to invoke. Optional; if
+                  omitted the proplet uses the task Name as the function identifier, which
+                  is the behaviour of the main propeller manager.
                 type: string
               imageUrl:
                 type: string
               inputs:
+                description: |-
+                  Inputs are task input arguments. Each element is a string but numeric
+                  values are accepted and coerced — matching the FlexStrings behaviour of
+                  the main propeller manager.
                 items:
-                  format: int64
-                  type: integer
+                  type: string
                 type: array
+              isRecurring:
+                description: IsRecurring indicates if the task should repeat after
+                  completion
+                type: boolean
+              jobId:
+                description: JobID groups tasks into a job for batch execution
+                type: string
+              kbsResourcePath:
+                type: string
+              kind:
+                allOf:
+                - enum:
+                  - standard
+                  - federated
+                - enum:
+                  - standard
+                  - federated
+                default: standard
+                type: string
+              metadata:
+                description: |-
+                  Metadata is arbitrary key-value data attached to the task. Must be valid JSON.
+                  Mirrors task.Task.Metadata in the propeller codebase.
+                x-kubernetes-preserve-unknown-fields: true
+              mode:
+                enum:
+                - infer
+                - train
+                type: string
+              monitoringProfile:
+                description: MonitoringProfile defines monitoring configuration for
+                  task execution
+                properties:
+                  collectCpu:
+                    type: boolean
+                  collectDiskIo:
+                    type: boolean
+                  collectFileDescriptors:
+                    type: boolean
+                  collectMemory:
+                    type: boolean
+                  collectThreads:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                  exportToMqtt:
+                    type: boolean
+                  historySize:
+                    type: integer
+                  interval:
+                    type: string
+                  retainHistory:
+                    type: boolean
+                type: object
               name:
                 maxLength: 253
                 minLength: 1
@@ -94,6 +175,13 @@ spec:
                   - any
                 default: any
                 type: string
+              priority:
+                default: 50
+                description: 'Priority (higher values = higher priority, default:
+                  50)'
+                maximum: 100
+                minimum: 0
+                type: integer
               propletSelector:
                 properties:
                   matchCapabilities:
@@ -127,8 +215,32 @@ spec:
                     pattern: ^[0-9]+(\.[0-9]*)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
                     type: string
                 type: object
+              restartPolicy:
+                description: |-
+                  RestartPolicy describes how the container should be restarted.
+                  Only one of the following restart policies may be specified.
+                  If none of the following policies is specified, the default one
+                  is RestartPolicyAlways.
+                type: string
+              runIf:
+                description: 'RunIf specifies when to run: "success" (default) or
+                  "failure"'
+                enum:
+                - success
+                - failure
+                type: string
+              schedule:
+                description: |-
+                  Scheduling fields
+                  Schedule is a cron expression for recurring tasks
+                type: string
+              timezone:
+                description: 'Timezone for schedule interpretation (default: UTC)'
+                type: string
+              workflowId:
+                description: WorkflowID groups tasks into a workflow for DAG execution
+                type: string
             required:
-            - functionName
             - name
             type: object
           status:
@@ -168,6 +280,31 @@ spec:
               finishedAt:
                 format: date-time
                 type: string
+              latestMetrics:
+                description: LatestMetrics is the most recent metrics sample reported
+                  by the proplet for this task.
+                properties:
+                  cpuMilliPercent:
+                    description: CPUMilliPercent is CPU utilisation × 1000 (e.g. 50000
+                      = 50 %).
+                    format: int64
+                    type: integer
+                  memoryBytes:
+                    format: int64
+                    type: integer
+                  memoryMilliPercent:
+                    description: MemoryMilliPercent is memory utilisation × 1000.
+                    format: int64
+                    type: integer
+                  timestamp:
+                    format: date-time
+                    type: string
+                type: object
+              nextRun:
+                description: NextRun is the next scheduled execution time for recurring
+                  tasks
+                format: date-time
+                type: string
               phase:
                 default: pending
                 enum:
@@ -176,9 +313,11 @@ spec:
                 - running
                 - completed
                 - failed
+                - skipped
+                - interrupted
                 type: string
               results:
-                type: string
+                x-kubernetes-preserve-unknown-fields: true
               startedAt:
                 format: date-time
                 type: string

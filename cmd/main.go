@@ -41,6 +41,7 @@ import (
 	propellerv1 "github.com/absmach/propeller/api/v1"
 	"github.com/absmach/propeller/internal/controller"
 	"github.com/absmach/propeller/internal/mqtt"
+	"github.com/absmach/propeller/internal/scheduler"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -224,26 +225,70 @@ func main() {
 		os.Exit(1)
 	}
 
-	mqttPubSub, err := mqtt.NewPubSub(
-		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
-	)
-	if err != nil {
-		setupLog.Error(err, "failed to initialize mqtt pubsub")
-		os.Exit(1)
+	var mqttPubSub mqtt.PubSub
+	if mqttAddress != "" {
+		mqttPubSub, err = mqtt.NewPubSub(
+			mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+		)
+		if err != nil {
+			setupLog.Error(err, "failed to initialize mqtt pubsub")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("MQTT not configured; external proplet dispatch and liveness tracking disabled")
 	}
 
+	watchNamespace := os.Getenv("WATCH_NAMESPACE")
+	if watchNamespace == "" {
+		setupLog.Info("WATCH_NAMESPACE not set; watching all namespaces")
+	} else {
+		setupLog.Info("watching single namespace", "namespace", watchNamespace)
+	}
+
+	if err := (&controller.PropletReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
+	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
+		os.Exit(1)
+	}
 	if err := (&controller.TaskReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub); err != nil {
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: watchNamespace,
+	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
-	if err := (&controller.PropletReconciler{
+	if err := (&controller.FederatedJobReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "FederatedJob")
+		os.Exit(1)
+	}
+	if err := (&controller.TrainingRoundReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TrainingRound")
+		os.Exit(1)
+	}
+	if err := (&controller.PropellerJobReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PropellerJob")
+		os.Exit(1)
+	}
+
+	if err := propellerv1.SetupTaskWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Task")
+		os.Exit(1)
+	}
+	if err := propellerv1.SetupPropletWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Proplet")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -5,6 +5,30 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
   - apps
   resources:
   - deployments
@@ -17,10 +41,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - propeller.propeller.abstractmachines.fr
+  - batch
   resources:
-  - proplets
-  - tasks
+  - jobs
   verbs:
   - create
   - delete
@@ -32,16 +55,36 @@ rules:
 - apiGroups:
   - propeller.propeller.abstractmachines.fr
   resources:
-  - proplets/finalizers
-  - tasks/finalizers
+  - federatedjobs
+  - propellerjobs
+  - proplets
+  - tasks
+  - trainingrounds
   verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - propeller.propeller.abstractmachines.fr
+  resources:
+  - federatedjobs/status
+  - propellerjobs/status
+  - proplets/status
+  - tasks/status
+  - trainingrounds/status
+  verbs:
+  - get
+  - patch
   - update
 - apiGroups:
   - propeller.propeller.abstractmachines.fr
   resources:
-  - proplets/status
-  - tasks/status
+  - propellerjobs/finalizers
+  - proplets/finalizers
+  - tasks/finalizers
   verbs:
-  - get
-  - patch
   - update

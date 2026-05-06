@@ -1,25 +1,27 @@
+# External Proplet sample — registers a proplet running outside the cluster (e.g. a
+# Docker container or edge device) with the operator via MQTT.
+#
+# For a full walkthrough including credential provisioning and task execution, see:
+# https://propeller.absmach.eu/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.abstractmachines.fr/v1
 kind: Proplet
 metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: proplet-demo
+  name: external-proplet
 spec:
-  connectionConfig:
-    channelId: 16722ec1-ce8a-446d-a829-d83459f1c40e
-    clientId: 12200940-8042-4728-8913-e4af093718a1
-    clientKey: 14ac042e-66ac-4cc0-9e71-23e00b8f318e
-    domainId: cbba98e5-84a9-422c-ad00-f6ee21d6695a
-    mqttAddress: tcp://0.tcp.in.ngrok.io:16621
-    mqttQos: 1
-    mqttTimeout: 10s
-  external:
-    deviceType: esp32
-    capabilities:
-      - temperature
-      - humidity
-  resources:
-    cpu: 50m
-    memory: 128Mi
   type: external
+  external:
+    deviceType: "docker-container"
+    capabilities:
+      - wasm
+      - wasmtime
+  connectionConfig:
+    domainId: "<your-domain-id>"
+    channelId: "<your-channel-id>"
+    clientId: "<your-proplet-client-id>"
+    clientKey: "<your-proplet-client-key>"
+    mqttAddress: "tcp://localhost:1883"
+    mqttQos: 0
+    mqttTimeout: 30s
