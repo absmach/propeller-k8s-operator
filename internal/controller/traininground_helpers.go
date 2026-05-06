@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	propellerapiv1 "github.com/absmach/propeller/api/v1"
-	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
 )
 
 type UpdateEnvelope struct {
@@ -54,9 +53,9 @@ func extractUpdateFromTask(task *propellerapiv1.Task, roundIDStr string) (Update
 }
 
 func processCompletedParticipant(
-	participant *propellerv1alpha1.RoundParticipantStatus,
+	participant *propellerapiv1.RoundParticipantStatus,
 	task *propellerapiv1.Task,
-	round *propellerv1alpha1.TrainingRound,
+	round *propellerapiv1.TrainingRound,
 ) (UpdateEnvelope, bool) {
 	if participant.UpdateReceived {
 		return UpdateEnvelope{}, false

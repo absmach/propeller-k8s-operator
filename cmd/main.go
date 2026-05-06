@@ -39,7 +39,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
-	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
 	"github.com/absmach/propeller/internal/controller"
 	"github.com/absmach/propeller/internal/mqtt"
 	"github.com/absmach/propeller/internal/scheduler"
@@ -55,7 +54,6 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(propellerv1.AddToScheme(scheme))
-	utilruntime.Must(propellerv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

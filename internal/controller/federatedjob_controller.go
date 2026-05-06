@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
+	propellerv1 "github.com/absmach/propeller/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,7 +35,7 @@ func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	_ = namespace
 
-	federatedJob := &propellerv1alpha1.FederatedJob{}
+	federatedJob := &propellerv1.FederatedJob{}
 	if err := r.Get(ctx, req.NamespacedName, federatedJob); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -70,13 +70,13 @@ func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 func (r *FederatedJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&propellerv1alpha1.FederatedJob{}).
-		Owns(&propellerv1alpha1.TrainingRound{}).
+		For(&propellerv1.FederatedJob{}).
+		Owns(&propellerv1.TrainingRound{}).
 		Complete(r)
 }
 
 //nolint:unparam // ctrl.Result is required by the interface signature
-func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propellerv1alpha1.FederatedJob) (ctrl.Result, error) {
+func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propellerv1.FederatedJob) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if err := r.validateSpec(job); err != nil {
@@ -91,12 +91,12 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 	}
 
 	roundName := fmt.Sprintf("round-%d-%s", 1, job.Name)
-	round := &propellerv1alpha1.TrainingRound{
+	round := &propellerv1.TrainingRound{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roundName,
 			Namespace: job.Namespace,
 		},
-		Spec: propellerv1alpha1.TrainingRoundSpec{
+		Spec: propellerv1.TrainingRoundSpec{
 			RoundID: fmt.Sprintf("round-%d", 1),
 			FederatedJobRef: corev1.LocalObjectReference{
 				Name: job.Name,
@@ -128,9 +128,9 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 	return ctrl.Result{}, nil
 }
 
-func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propellerv1alpha1.FederatedJob) (ctrl.Result, error) {
+func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propellerv1.FederatedJob) (ctrl.Result, error) {
 	roundName := fmt.Sprintf("round-%d-%s", job.Status.CurrentRound, job.Name)
-	round := &propellerv1alpha1.TrainingRound{}
+	round := &propellerv1.TrainingRound{}
 	if err := r.Get(ctx, client.ObjectKey{Name: roundName, Namespace: job.Namespace}, round); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -158,13 +158,13 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 				nextRoundAnnotations["propeller.propeller.abstractmachines.fr/aggregated-update"] = aggregatedUpdateJSON
 			}
 
-			nextRound := &propellerv1alpha1.TrainingRound{
+			nextRound := &propellerv1.TrainingRound{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        nextRoundName,
 					Namespace:   job.Namespace,
 					Annotations: nextRoundAnnotations,
 				},
-				Spec: propellerv1alpha1.TrainingRoundSpec{
+				Spec: propellerv1.TrainingRoundSpec{
 					RoundID: fmt.Sprintf("round-%d", nextRoundNum),
 					FederatedJobRef: corev1.LocalObjectReference{
 						Name: job.Name,
@@ -207,7 +207,7 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 	}
 }
 
-func (r *FederatedJobReconciler) validateSpec(job *propellerv1alpha1.FederatedJob) error {
+func (r *FederatedJobReconciler) validateSpec(job *propellerv1.FederatedJob) error {
 	if job.Spec.ExperimentID == "" {
 		return errors.New("experimentId is required")
 	}
@@ -230,7 +230,7 @@ func (r *FederatedJobReconciler) validateSpec(job *propellerv1alpha1.FederatedJo
 	return nil
 }
 
-func (r *FederatedJobReconciler) getParticipantIDs(participants []propellerv1alpha1.ParticipantSpec) []string {
+func (r *FederatedJobReconciler) getParticipantIDs(participants []propellerv1.ParticipantSpec) []string {
 	ids := make([]string, len(participants))
 	for i, p := range participants {
 		ids[i] = p.PropletID
@@ -239,7 +239,7 @@ func (r *FederatedJobReconciler) getParticipantIDs(participants []propellerv1alp
 	return ids
 }
 
-func (r *FederatedJobReconciler) updateCondition(job *propellerv1alpha1.FederatedJob, status, reason, message string) {
+func (r *FederatedJobReconciler) updateCondition(job *propellerv1.FederatedJob, status, reason, message string) {
 	now := time.Now()
 	condition := &metav1.Condition{
 		Type:               federatedJobConditionReady,

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	propellerapiv1 "github.com/absmach/propeller/api/v1"
-	propellerv1alpha1 "github.com/absmach/propeller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,7 +41,7 @@ func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	_ = namespace
 
-	round := &propellerv1alpha1.TrainingRound{}
+	round := &propellerapiv1.TrainingRound{}
 	if err := r.Get(ctx, req.NamespacedName, round); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -88,18 +87,18 @@ func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func (r *TrainingRoundReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&propellerv1alpha1.TrainingRound{}).
+		For(&propellerapiv1.TrainingRound{}).
 		Owns(&propellerapiv1.Task{}).
 		Complete(r)
 }
 
-func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *propellerv1alpha1.TrainingRound) (ctrl.Result, error) {
+func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *propellerapiv1.TrainingRound) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if len(round.Status.Participants) == 0 {
-		round.Status.Participants = make([]propellerv1alpha1.RoundParticipantStatus, len(round.Spec.Participants))
+		round.Status.Participants = make([]propellerapiv1.RoundParticipantStatus, len(round.Spec.Participants))
 		for i, propletID := range round.Spec.Participants {
-			round.Status.Participants[i] = propellerv1alpha1.RoundParticipantStatus{
+			round.Status.Participants[i] = propellerapiv1.RoundParticipantStatus{
 				PropletID:      propletID,
 				Status:         "Pending",
 				UpdateReceived: false,
@@ -139,7 +138,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 		}
 
 		if round.Spec.FederatedJobRef.Name != "" {
-			federatedJob := &propellerv1alpha1.FederatedJob{}
+			federatedJob := &propellerapiv1.FederatedJob{}
 			if err := r.Get(ctx, client.ObjectKey{Name: round.Spec.FederatedJobRef.Name, Namespace: round.Namespace}, federatedJob); err == nil {
 				env["FL_JOB_ID"] = federatedJob.Spec.ExperimentID
 			}
@@ -199,7 +198,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 }
 
-func (r *TrainingRoundReconciler) handleRunning(ctx context.Context, round *propellerv1alpha1.TrainingRound) (ctrl.Result, error) {
+func (r *TrainingRoundReconciler) handleRunning(ctx context.Context, round *propellerapiv1.TrainingRound) (ctrl.Result, error) {
 	updatesReceived, collectedUpdates := r.processParticipants(ctx, round)
 	round.Status.UpdatesReceived = updatesReceived
 
@@ -238,7 +237,7 @@ func (r *TrainingRoundReconciler) handleRunning(ctx context.Context, round *prop
 }
 
 //nolint:unparam // ctrl.Result is required by the interface signature
-func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *propellerv1alpha1.TrainingRound) (ctrl.Result, error) {
+func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *propellerapiv1.TrainingRound) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	var collectedUpdates []UpdateEnvelope
@@ -250,7 +249,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 
 	algorithm := "fedavg"
 	if round.Spec.FederatedJobRef.Name != "" {
-		federatedJob := &propellerv1alpha1.FederatedJob{}
+		federatedJob := &propellerapiv1.FederatedJob{}
 		if err := r.Get(ctx, client.ObjectKey{Name: round.Spec.FederatedJobRef.Name, Namespace: round.Namespace}, federatedJob); err == nil {
 			if federatedJob.Spec.Aggregator.Algorithm != "" {
 				algorithm = federatedJob.Spec.Aggregator.Algorithm
@@ -279,7 +278,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 	return ctrl.Result{}, nil
 }
 
-func (r *TrainingRoundReconciler) processParticipants(ctx context.Context, round *propellerv1alpha1.TrainingRound) (int, []UpdateEnvelope) {
+func (r *TrainingRoundReconciler) processParticipants(ctx context.Context, round *propellerapiv1.TrainingRound) (int, []UpdateEnvelope) {
 	logger := log.FromContext(ctx)
 	updatesReceived := 0
 	collectedUpdates := make([]UpdateEnvelope, 0)
@@ -339,7 +338,7 @@ func (r *TrainingRoundReconciler) logMissingUpdate(ctx context.Context, task *pr
 	}
 }
 
-func (r *TrainingRoundReconciler) storeCollectedUpdates(round *propellerv1alpha1.TrainingRound, collectedUpdates []UpdateEnvelope) {
+func (r *TrainingRoundReconciler) storeCollectedUpdates(round *propellerapiv1.TrainingRound, collectedUpdates []UpdateEnvelope) {
 	updatesJSON, err := json.Marshal(collectedUpdates)
 	if err == nil {
 		if round.Annotations == nil {
@@ -349,7 +348,7 @@ func (r *TrainingRoundReconciler) storeCollectedUpdates(round *propellerv1alpha1
 	}
 }
 
-func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, round *propellerv1alpha1.TrainingRound, updatesReceived int) (ctrl.Result, error) {
+func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, round *propellerapiv1.TrainingRound, updatesReceived int) (ctrl.Result, error) {
 	round.Status.Phase = "Aggregating"
 	r.updateCondition(round, "True", "Aggregating", fmt.Sprintf("Collected %d updates, starting aggregation", updatesReceived))
 	if err := r.Status().Update(ctx, round); err != nil {
@@ -362,7 +361,7 @@ func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, r
 // checkTimeout returns (result, timedOut, err). When timedOut is true the
 // caller must return immediately; err holds any Status().Update failure so it
 // is not silently discarded.
-func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerv1alpha1.TrainingRound, updatesReceived int) (ctrl.Result, bool, error) {
+func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *propellerapiv1.TrainingRound, updatesReceived int) (ctrl.Result, bool, error) {
 	if round.Spec.TimeoutSeconds <= 0 || round.Status.StartTime == nil {
 		return ctrl.Result{}, false, nil
 	}
@@ -375,7 +374,7 @@ func (r *TrainingRoundReconciler) checkTimeout(ctx context.Context, round *prope
 	return ctrl.Result{}, true, r.Status().Update(ctx, round)
 }
 
-func (r *TrainingRoundReconciler) aggregateUpdates(ctx context.Context, round *propellerv1alpha1.TrainingRound, collectedUpdates []UpdateEnvelope, algorithm string) string {
+func (r *TrainingRoundReconciler) aggregateUpdates(ctx context.Context, round *propellerapiv1.TrainingRound, collectedUpdates []UpdateEnvelope, algorithm string) string {
 	startTime := time.Now()
 	logger := log.FromContext(ctx)
 
@@ -407,7 +406,7 @@ func (r *TrainingRoundReconciler) aggregateUpdates(ctx context.Context, round *p
 	return aggregatedModelRef
 }
 
-func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerv1alpha1.TrainingRound, aggEnv UpdateEnvelope) {
+func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerapiv1.TrainingRound, aggEnv UpdateEnvelope) {
 	aggJSON, err := json.Marshal(aggEnv)
 	if err == nil {
 		if round.Annotations == nil {
@@ -417,7 +416,7 @@ func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerv1alpha1
 	}
 }
 
-func (r *TrainingRoundReconciler) updateStatusAndRequeue(ctx context.Context, round *propellerv1alpha1.TrainingRound, requeueAfter time.Duration) (ctrl.Result, error) {
+func (r *TrainingRoundReconciler) updateStatusAndRequeue(ctx context.Context, round *propellerapiv1.TrainingRound, requeueAfter time.Duration) (ctrl.Result, error) {
 	if err := r.Status().Update(ctx, round); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -425,7 +424,7 @@ func (r *TrainingRoundReconciler) updateStatusAndRequeue(ctx context.Context, ro
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-func (r *TrainingRoundReconciler) updateCondition(round *propellerv1alpha1.TrainingRound, status, reason, message string) {
+func (r *TrainingRoundReconciler) updateCondition(round *propellerapiv1.TrainingRound, status, reason, message string) {
 	now := metav1.Now()
 	condition := metav1.Condition{
 		Type:               "Ready",
