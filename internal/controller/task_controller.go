@@ -985,7 +985,7 @@ func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.M
 	r.sched = sched
 	r.tenantID = tenantID
 	r.channelID = channelID
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, tenantID, channelID)
+	r.baseTopic = fmt.Sprintf(baseTopicFmt, tenantID, channelID)
 	r.taskEvents = make(chan event.GenericEvent, 256)
 
 	// Register a field index on spec.dependsOn so enqueueDependents can use

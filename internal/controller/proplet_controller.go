@@ -42,7 +42,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var superMQBaseTopic = "m/%s/c/%s"
+// baseTopicFmt is the root MQTT topic for a tenant/channel pair, matching the
+// manager's baseTopicFmt in the propeller repository.
+var baseTopicFmt = "m/%s/c/%s"
 
 const PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
 
@@ -723,7 +725,7 @@ func (r *PropletReconciler) SetupWithManager(
 	r.livelinessInterval = livelinessInterval
 	r.lastSeenThreshold = lastSeenThreshold
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, tenantID, channelID)
+	r.baseTopic = fmt.Sprintf(baseTopicFmt, tenantID, channelID)
 	r.propletEvents = make(chan event.GenericEvent, 256)
 
 	// Subscribe to liveness and proplet-level metrics topics. Task result topics

@@ -188,10 +188,10 @@ export PROPLET_IMAGE="<your-registry>/propeller-proplet:<tag>"
 export WASM_IMAGE="<your-registry>/your-wasm-client:<tag>"
 
 export MQTT_BROKER_ADDRESS="tcp://<your-mqtt-host>:<port>"
-export MQTT_DOMAIN_ID="<your-propeller-domain-id>"
+export MQTT_TENANT_ID="<your-propeller-tenant-id>"
 export MQTT_CHANNEL_ID="<your-propeller-channel-id>"
-export MQTT_CLIENT_ID="<your-propeller-client-id>"
-export MQTT_CLIENT_KEY="<your-propeller-client-key>"
+export MQTT_ENTITY_ID="<your-propeller-entity-id>"
+export MQTT_API_KEY="<your-propeller-api-key>"
 ```
 
 - **`KUBE_CONTEXT`**: the Kubernetes context you want to use for testing.
@@ -256,10 +256,10 @@ cd path/to/propeller-k8s-operator
 
 make run -- \
   --mqtt-address="${MQTT_BROKER_ADDRESS}" \
-  --domain-id="${MQTT_DOMAIN_ID}" \
+  --tenant-id="${MQTT_TENANT_ID}" \
   --channel-id="${MQTT_CHANNEL_ID}" \
-  --client-id="${MQTT_CLIENT_ID}" \
-  --client-key="${MQTT_CLIENT_KEY}"
+  --entity-id="${MQTT_ENTITY_ID}" \
+  --api-key="${MQTT_API_KEY}"
 ```
 
 When running locally, the operator connects to the cluster referenced by your current kubeconfig context.
@@ -304,7 +304,7 @@ You can use either k8s-backed proplets (managed as Deployments) or external prop
    - Under `spec.k8s.image`, set `PROPLET_IMAGE`.
    - Under `spec.connectionConfig`, set:
      - `mqttAddress` to `MQTT_BROKER_ADDRESS`.
-     - `domainId`, `channelId`, `clientId`, `clientKey` to your `MQTT_*` values.
+     - `tenantId`, `channelId`, `entityId`, `apiKey` to your `MQTT_*` values.
    - Adjust `spec.resources` as needed for your cluster.
 
 3. Apply the manifest:
