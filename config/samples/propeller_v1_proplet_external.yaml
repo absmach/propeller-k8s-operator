@@ -18,10 +18,10 @@ spec:
       - wasm
       - wasmtime
   connectionConfig:
-    domainId: "<your-domain-id>"
+    tenantId: "<your-tenant-id>"
     channelId: "<your-channel-id>"
-    clientId: "<your-proplet-client-id>"
-    clientKey: "<your-proplet-client-key>"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
     mqttAddress: "tcp://localhost:1883"
     mqttQos: 0
     mqttTimeout: 30s

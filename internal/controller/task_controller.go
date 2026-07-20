@@ -71,7 +71,7 @@ type TaskReconciler struct {
 	Namespace string
 	sched     scheduler.Scheduler
 	pubsub    mqtt.PubSub
-	domainID  string
+	tenantID  string
 	channelID string
 	baseTopic string
 
@@ -980,12 +980,12 @@ func (r *TaskReconciler) enqueueDependents(ctx context.Context, obj client.Objec
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
+func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
 	r.pubsub = pubsub
 	r.sched = sched
-	r.domainID = domainID
+	r.tenantID = tenantID
 	r.channelID = channelID
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(superMQBaseTopic, tenantID, channelID)
 	r.taskEvents = make(chan event.GenericEvent, 256)
 
 	// Register a field index on spec.dependsOn so enqueueDependents can use

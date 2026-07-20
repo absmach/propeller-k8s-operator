@@ -65,21 +65,15 @@ spec:
                 description: ConnectionConfig defines the MQTT connection configuration
                   for a Proplet.
                 properties:
-                  channelId:
-                    minLength: 1
-                    type: string
-                  clientId:
-                    minLength: 1
-                    type: string
-                  clientKey:
+                  apiKey:
                     description: |-
-                      ClientKey is the MQTT client secret. Exactly one of ClientKey or
-                      ClientKeySecretRef must be set.
+                      APIKey is the MQTT API key. Exactly one of APIKey or
+                      APIKeySecretRef must be set.
                     type: string
-                  clientKeySecretRef:
+                  apiKeySecretRef:
                     description: |-
-                      ClientKeySecretRef references a Kubernetes Secret whose key holds the
-                      MQTT client secret. Exactly one of ClientKey or ClientKeySecretRef must
+                      APIKeySecretRef references a Kubernetes Secret whose key holds the
+                      MQTT API key. Exactly one of APIKey or APIKeySecretRef must
                       be set.
                     properties:
                       key:
@@ -103,7 +97,10 @@ spec:
                     - key
                     type: object
                     x-kubernetes-map-type: atomic
-                  domainId:
+                  channelId:
+                    minLength: 1
+                    type: string
+                  entityId:
                     minLength: 1
                     type: string
                   mqttAddress:
@@ -116,11 +113,14 @@ spec:
                   mqttTimeout:
                     default: 30s
                     type: string
+                  tenantId:
+                    minLength: 1
+                    type: string
                 required:
                 - channelId
-                - clientId
-                - domainId
+                - entityId
                 - mqttAddress
+                - tenantId
                 type: object
               external:
                 properties:

@@ -76,20 +76,20 @@ func (v *PropletCustomValidator) validateProplet(proplet *Proplet) error {
 	var allErrs field.ErrorList
 
 	cfg := proplet.Spec.ConnectionConfig
-	hasPlain := cfg.ClientKey != ""
-	hasRef := cfg.ClientKeySecretRef != nil
+	hasPlain := cfg.APIKey != ""
+	hasRef := cfg.APIKeySecretRef != nil
 
 	if !hasPlain && !hasRef {
 		allErrs = append(allErrs, field.Required(
-			field.NewPath("spec", "connectionConfig", "clientKey"),
-			"exactly one of clientKey or clientKeySecretRef must be set",
+			field.NewPath("spec", "connectionConfig", "apiKey"),
+			"exactly one of apiKey or apiKeySecretRef must be set",
 		))
 	}
 	if hasPlain && hasRef {
 		allErrs = append(allErrs, field.Invalid(
-			field.NewPath("spec", "connectionConfig", "clientKey"),
-			cfg.ClientKey,
-			"clientKey and clientKeySecretRef are mutually exclusive; set exactly one",
+			field.NewPath("spec", "connectionConfig", "apiKey"),
+			cfg.APIKey,
+			"apiKey and apiKeySecretRef are mutually exclusive; set exactly one",
 		))
 	}
 
