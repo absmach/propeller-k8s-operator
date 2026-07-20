@@ -42,7 +42,7 @@ func SetupTaskWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-propeller-propeller-abstractmachines-fr-v1-task,mutating=true,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=create;update,versions=v1,name=mtask-v1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-propeller-propeller-abstractmachines-fr-v1-task,mutating=true,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.absmach.eu,resources=tasks,verbs=create;update,versions=v1,name=mtask-v1.kb.io,admissionReviewVersions=v1
 
 // TaskCustomDefaulter applies defaults to Task resources.
 type TaskCustomDefaulter struct{}
@@ -69,7 +69,7 @@ func (d *TaskCustomDefaulter) Default(_ context.Context, obj runtime.Object) err
 	return nil
 }
 
-// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-task,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=create;update,versions=v1,name=vtask-v1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-task,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.absmach.eu,resources=tasks,verbs=create;update,versions=v1,name=vtask-v1.kb.io,admissionReviewVersions=v1
 
 // TaskCustomValidator validates Task resources.
 type TaskCustomValidator struct{}
@@ -147,7 +147,7 @@ func (v *TaskCustomValidator) validateTask(task *Task) error {
 	}
 
 	return apierrors.NewInvalid(
-		schema.GroupKind{Group: "propeller.propeller.abstractmachines.fr", Kind: "Task"},
+		schema.GroupKind{Group: "propeller.propeller.absmach.eu", Kind: "Task"},
 		task.Name,
 		allErrs,
 	)

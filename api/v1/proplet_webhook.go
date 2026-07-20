@@ -40,7 +40,7 @@ func SetupPropletWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-proplet,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=create;update,versions=v1,name=vproplet-v1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-proplet,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.absmach.eu,resources=proplets,verbs=create;update,versions=v1,name=vproplet-v1.kb.io,admissionReviewVersions=v1
 
 // PropletCustomValidator validates Proplet resources.
 type PropletCustomValidator struct{}
@@ -97,7 +97,7 @@ func (v *PropletCustomValidator) validateProplet(proplet *Proplet) error {
 		return nil
 	}
 	return apierrors.NewInvalid(
-		schema.GroupKind{Group: "propeller.propeller.abstractmachines.fr", Kind: "Proplet"},
+		schema.GroupKind{Group: "propeller.propeller.absmach.eu", Kind: "Proplet"},
 		proplet.Name,
 		allErrs,
 	)

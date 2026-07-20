@@ -51,7 +51,7 @@ const indexDependsOn = "spec.dependsOn"
 
 // TaskFinalizerName is the finalizer added to external tasks so we can send
 // a stop command before the resource is removed from etcd.
-const TaskFinalizerName = "propeller.propeller.abstractmachines.fr/task-finalizer"
+const TaskFinalizerName = "propeller.propeller.absmach.eu/task-finalizer"
 
 // mqttTaskUpdate carries the payload from an MQTT result or status message
 // delivered by a proplet.  It is stored in pendingResults by the MQTT goroutine
@@ -90,14 +90,14 @@ type TaskReconciler struct {
 	pendingMetrics sync.Map
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets,verbs=get;list
 
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)

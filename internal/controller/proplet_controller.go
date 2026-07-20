@@ -46,7 +46,7 @@ import (
 // manager's baseTopicFmt in the propeller repository.
 var baseTopicFmt = "m/%s/c/%s"
 
-const PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
+const PropletFinalizerName = "propeller.propeller.absmach.eu/finalizer"
 
 const aliveHistoryLimit = 10
 
@@ -80,9 +80,9 @@ type PropletReconciler struct {
 	pendingPropletMetrics sync.Map
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets/finalizers,verbs=update
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

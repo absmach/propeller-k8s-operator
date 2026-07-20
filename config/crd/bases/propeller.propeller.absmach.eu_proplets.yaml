@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: proplets.propeller.propeller.abstractmachines.fr
+  name: proplets.propeller.propeller.absmach.eu
 spec:
-  group: propeller.propeller.abstractmachines.fr
+  group: propeller.propeller.absmach.eu
   names:
     kind: Proplet
     listKind: PropletList

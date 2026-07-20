@@ -35,7 +35,7 @@ The operator introduces several Custom Resource Definitions (CRDs):
 **Example `Proplet` (k8s):**
 
 ```yaml
-apiVersion: propeller.propeller.abstractmachines.fr/v1
+apiVersion: propeller.propeller.absmach.eu/v1
 kind: Proplet
 metadata:
   name: my-k8s-proplet
@@ -52,7 +52,7 @@ spec:
 **Example `Proplet` (external):**
 
 ```yaml
-apiVersion: propeller.propeller.abstractmachines.fr/v1
+apiVersion: propeller.propeller.absmach.eu/v1
 kind: Proplet
 metadata:
   name: my-external-proplet
@@ -69,7 +69,7 @@ spec:
 
 ### 2. `Task` (canonical task API)
 
-`Task` (`propeller.propeller.abstractmachines.fr/v1`) represents a WASM workload to be executed on a `Proplet`.
+`Task` (`propeller.propeller.absmach.eu/v1`) represents a WASM workload to be executed on a `Proplet`.
 
 Key fields include:
 
@@ -85,7 +85,7 @@ Key fields include:
 **Example `Task`:**
 
 ```yaml
-apiVersion: propeller.propeller.abstractmachines.fr/v1
+apiVersion: propeller.propeller.absmach.eu/v1
 kind: Task
 metadata:
   name: my-task
@@ -113,14 +113,14 @@ When the selected `Proplet` is:
 
 ### 3. `FederatedJob` and `TrainingRound` (federated learning)
 
-`FederatedJob` (`propeller.propeller.abstractmachines.fr/v1alpha1`) defines a federated learning experiment:
+`FederatedJob` (`propeller.propeller.absmach.eu/v1alpha1`) defines a federated learning experiment:
 
 - `experimentId`, `modelRef`, and `taskWasmImage`.
 - Participants (proplet IDs).
 - `kOfN` and `timeoutSeconds`.
 - Aggregation algorithm/config via `aggregator`.
 
-`TrainingRound` (`propeller.propeller.abstractmachines.fr/v1alpha1`) represents a single FL round:
+`TrainingRound` (`propeller.propeller.absmach.eu/v1alpha1`) represents a single FL round:
 
 - Creates one `Task` per participant with FL env vars:
   - `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS`, `PROPLET_ID`, and, when available, aggregated global update env vars.
@@ -354,7 +354,7 @@ The goal here is to run a small workload on a k8s-backed proplet and observe how
 1. Create a Task manifest, for example `my-task.yaml`:
 
    ```yaml
-   apiVersion: propeller.propeller.abstractmachines.fr/v1
+   apiVersion: propeller.propeller.absmach.eu/v1
    kind: Task
    metadata:
      name: <your-task-name>

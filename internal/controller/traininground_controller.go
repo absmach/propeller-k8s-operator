@@ -29,11 +29,11 @@ type TrainingRoundReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs,verbs=get
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=federatedjobs,verbs=get
 
 func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -112,7 +112,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 		existingTask := &propellerapiv1.Task{}
 		if err := r.Get(ctx, client.ObjectKey{Name: taskName, Namespace: round.Namespace}, existingTask); err == nil {
 			round.Status.Participants[i].TaskRef = &corev1.ObjectReference{
-				APIVersion: "propeller.propeller.abstractmachines.fr/v1",
+				APIVersion: "propeller.propeller.absmach.eu/v1",
 				Kind:       "Task",
 				Name:       taskName,
 				Namespace:  round.Namespace,
@@ -126,7 +126,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 		env["MODEL_URI"] = round.Spec.ModelRef
 		env["PROPLET_ID"] = participantID
 
-		if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"]; ok {
+		if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.absmach.eu/aggregated-update"]; ok {
 			var aggEnv UpdateEnvelope
 			if err := json.Unmarshal([]byte(aggregatedUpdateJSON), &aggEnv); err == nil {
 				env["FL_GLOBAL_VERSION"] = aggEnv.GlobalVersion
@@ -181,7 +181,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 		}
 
 		round.Status.Participants[i].TaskRef = &corev1.ObjectReference{
-			APIVersion: "propeller.propeller.abstractmachines.fr/v1",
+			APIVersion: "propeller.propeller.absmach.eu/v1",
 			Kind:       "Task",
 			Name:       taskName,
 			Namespace:  round.Namespace,
@@ -241,7 +241,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 	logger := log.FromContext(ctx)
 
 	var collectedUpdates []UpdateEnvelope
-	if updatesJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"]; ok {
+	if updatesJSON, ok := round.Annotations["propeller.propeller.absmach.eu/collected-updates"]; ok {
 		if err := json.Unmarshal([]byte(updatesJSON), &collectedUpdates); err != nil {
 			logger.Error(err, "failed to unmarshal collected updates")
 		}
@@ -344,7 +344,7 @@ func (r *TrainingRoundReconciler) storeCollectedUpdates(round *propellerapiv1.Tr
 		if round.Annotations == nil {
 			round.Annotations = make(map[string]string)
 		}
-		round.Annotations["propeller.propeller.abstractmachines.fr/collected-updates"] = string(updatesJSON)
+		round.Annotations["propeller.propeller.absmach.eu/collected-updates"] = string(updatesJSON)
 	}
 }
 
@@ -412,7 +412,7 @@ func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerapiv1.Tr
 		if round.Annotations == nil {
 			round.Annotations = make(map[string]string)
 		}
-		round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"] = string(aggJSON)
+		round.Annotations["propeller.propeller.absmach.eu/aggregated-update"] = string(aggJSON)
 	}
 }
 

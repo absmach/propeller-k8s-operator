@@ -31,8 +31,12 @@ linters:
         - "object"
         - "boolean"
         - "array"
+        - "json-f64"
         - "tid"
         - "proplet_id"
+        - "propeller.propeller.absmach.eu"
+        - "propeller.absmach.fr/proplet"
+        - "broadcast"
     revive:
       rules:
         - name: comment-spacings

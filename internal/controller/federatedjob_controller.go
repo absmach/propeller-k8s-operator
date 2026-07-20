@@ -24,10 +24,10 @@ type FederatedJobReconciler struct {
 
 const federatedJobConditionReady = "Ready"
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=federatedjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=federatedjobs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds/status,verbs=get;update;patch
 
 func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -154,8 +154,8 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 			}
 
 			nextRoundAnnotations := make(map[string]string)
-			if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"]; ok {
-				nextRoundAnnotations["propeller.propeller.abstractmachines.fr/aggregated-update"] = aggregatedUpdateJSON
+			if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.absmach.eu/aggregated-update"]; ok {
+				nextRoundAnnotations["propeller.propeller.absmach.eu/aggregated-update"] = aggregatedUpdateJSON
 			}
 
 			nextRound := &propellerv1.TrainingRound{
