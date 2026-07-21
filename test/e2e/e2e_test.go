@@ -219,6 +219,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 			By("creating the curl-metrics pod to access the metrics endpoint")
 			metricsURL := fmt.Sprintf("https://%s.%s.svc.cluster.local:8443/metrics", metricsServiceName, namespace)
+			//nolint:lll
+			curlCmd := fmt.Sprintf(`["curl", "--connect-timeout=30", "--max-time=60", "-si", "-k", "-H", "Authorization: Bearer %s", "%s"]`, token, metricsURL)
 			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
 				"--namespace", namespace,
 				"--image=curlimages/curl:latest",
@@ -228,7 +230,7 @@ var _ = Describe("Manager", Ordered, func() {
 						"containers": [{
 							"name": "curl-metrics",
 							"image": "curlimages/curl:latest",
-							"command": ["curl", "--connect-timeout=30", "--max-time=60", "-si", "-k", "-H", "Authorization: Bearer %s", "%s"],
+							"command": %s,
 							"securityContext": {
 								"allowPrivilegeEscalation": false,
 								"capabilities": {
@@ -244,7 +246,7 @@ var _ = Describe("Manager", Ordered, func() {
 						}],
 						"serviceAccountName": "%s"
 					}
-				}`, token, metricsURL, serviceAccountName))
+				}`, curlCmd, serviceAccountName))
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
 
