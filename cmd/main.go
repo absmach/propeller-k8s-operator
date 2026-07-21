@@ -94,7 +94,7 @@ func ensureCerts(certDir, certName, certKey string) error {
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer func() { _ = certOut.Close() }()
 	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
 		return err
 	}
@@ -103,8 +103,9 @@ func ensureCerts(certDir, certName, certKey string) error {
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
-	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}); err != nil {
+	defer func() { _ = keyOut.Close() }()
+	block := pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	if err := pem.Encode(keyOut, &block); err != nil {
 		return err
 	}
 
