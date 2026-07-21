@@ -159,6 +159,12 @@ type TaskSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	Metadata *apiextensionsv1.JSON `json:"metadata,omitempty"`
+
+	// HalStoragePath is the path inside the proplet container where HAL
+	// (Hardware Abstraction Layer) storage is mounted. Maps to the
+	// hal_storage_path field in the propeller's StartRequest.
+	// +optional
+	HalStoragePath *string `json:"halStoragePath,omitempty"`
 }
 
 // MonitoringProfile defines monitoring configuration for task execution

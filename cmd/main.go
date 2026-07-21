@@ -24,6 +24,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -139,6 +140,7 @@ func main() {
 	var channelID string
 	var entityID string
 	var apiKey string
+	var schedulerType string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8181", "The address the probe endpoint binds to.")
@@ -167,6 +169,7 @@ func main() {
 	flag.StringVar(&channelID, "channel-id", "", "The channel ID.")
 	flag.StringVar(&entityID, "entity-id", "", "The entity ID.")
 	flag.StringVar(&apiKey, "api-key", "", "The API key.")
+	flag.StringVar(&schedulerType, "scheduler", "round-robin", "Scheduler algorithm: round-robin or priority")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -311,6 +314,16 @@ func main() {
 		setupLog.Info("MQTT not configured; external proplet dispatch and liveness tracking disabled")
 	}
 
+	var sched scheduler.Scheduler
+	switch schedulerType {
+	case "priority":
+		sched = scheduler.NewPriority()
+		setupLog.Info("using priority scheduler")
+	default:
+		sched = scheduler.NewRoundRobin()
+		setupLog.Info("using round-robin scheduler")
+	}
+
 	watchNamespace := os.Getenv("WATCH_NAMESPACE")
 	if watchNamespace == "" {
 		setupLog.Info("WATCH_NAMESPACE not set; watching all namespaces")
@@ -330,14 +343,15 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Namespace: watchNamespace,
-	}).SetupWithManager(tenantID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
+	}).SetupWithManager(tenantID, channelID, mgr, mqttPubSub, sched); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
+	baseTopic := fmt.Sprintf("m/%s/c/%s", tenantID, channelID)
 	if err := (&controller.FederatedJobReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, mqttPubSub, baseTopic, watchNamespace); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "FederatedJob")
 		os.Exit(1)
 	}

@@ -37,6 +37,7 @@ linters:
         - "propeller.propeller.absmach.eu"
         - "propeller.absmach.fr/proplet"
         - "broadcast"
+        - "fedavg"
     revive:
       rules:
         - name: comment-spacings

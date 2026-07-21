@@ -137,6 +137,77 @@ spec:
                 description: K8sPropletSpec defines the configuration for a Kubernetes-backed
                   Proplet.
                 properties:
+                  env:
+                    description: Env holds optional environment overrides for the
+                      proplet container.
+                    properties:
+                      aaConfigPath:
+                        description: AaConfigPath sets PROPLET_AA_CONFIG_PATH for
+                          confidential computing.
+                        type: string
+                      description:
+                        description: Description sets PROPLET_DESCRIPTION.
+                        type: string
+                      externalWasmRuntime:
+                        description: ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME
+                          (path to wasmtime binary).
+                        type: string
+                      halEnabled:
+                        description: HalEnabled sets PROPLET_HAL_ENABLED.
+                        type: boolean
+                      httpEnabled:
+                        description: HttpEnabled sets PROPLET_HTTP_ENABLED.
+                        type: boolean
+                      kbsUri:
+                        description: KbsURI sets PROPLET_KBS_URI for confidential
+                          computing.
+                        type: string
+                      livelinessInterval:
+                        description: LivelinessInterval sets PROPLET_LIVELINESS_INTERVAL
+                          (default 10s).
+                        type: string
+                      location:
+                        description: Location sets PROPLET_LOCATION.
+                        type: string
+                      metricsEnabled:
+                        description: MetricsEnabled sets PROPLET_METRICS_ENABLED (default
+                          true).
+                        type: boolean
+                      metricsInterval:
+                        description: MetricsInterval sets PROPLET_METRICS_INTERVAL
+                          (default 10s).
+                        type: string
+                      metricsPort:
+                        description: MetricsPort sets PROPLET_METRICS_PORT (default
+                          9092).
+                        format: int32
+                        type: integer
+                      mqttTlsCaCert:
+                        description: MqttTLSCACert sets PROPLET_MQTT_TLS_CA_CERT.
+                        type: string
+                      mqttTlsClientCert:
+                        description: MqttTLSClientCert sets PROPLET_MQTT_TLS_CLIENT_CERT.
+                        type: string
+                      mqttTlsClientKey:
+                        description: MqttTLSClientKey sets PROPLET_MQTT_TLS_CLIENT_KEY.
+                        type: string
+                      mqttTlsInsecureSkipVerify:
+                        description: MqttTLSInsecureSkipVerify sets PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY.
+                        type: boolean
+                      otelUrl:
+                        description: OtelURL sets PROPLET_OTEL_URL for OpenTelemetry.
+                        type: string
+                      tags:
+                        description: Tags sets PROPLET_TAGS as a comma-separated list.
+                        type: string
+                      traceRatio:
+                        description: TraceRatio sets PROPLET_TRACE_RATIO as a string
+                          (e.g. "0.5").
+                        type: string
+                      usbEnabled:
+                        description: UsbEnabled sets PROPLET_USB_ENABLED.
+                        type: boolean
+                    type: object
                   image:
                     minLength: 1
                     type: string

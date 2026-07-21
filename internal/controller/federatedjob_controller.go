@@ -2,12 +2,16 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
+	"github.com/absmach/propeller/internal/mqtt"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -19,7 +23,10 @@ import (
 type FederatedJobReconciler struct {
 	client.Client
 
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	pubsub    mqtt.PubSub
+	baseTopic string
+	namespace string
 }
 
 const federatedJobConditionReady = "Ready"
@@ -68,11 +75,127 @@ func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return result, err
 }
 
-func (r *FederatedJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *FederatedJobReconciler) SetupWithManager(mgr ctrl.Manager, pubsub mqtt.PubSub, baseTopic, namespace string) error {
+	r.pubsub = pubsub
+	r.baseTopic = baseTopic
+	r.namespace = namespace
+
+	if r.pubsub != nil {
+		// Subscribe to FL round start messages from the FL coordinator.
+		flRoundStartTopic := r.baseTopic + "/fl/rounds/start"
+		if err := r.pubsub.Subscribe(
+			flRoundStartTopic,
+			func(_ string, msg map[string]any) error {
+				return r.mqttFLRoundStartHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+
+		// Subscribe to FL update submissions from proplets.
+		flUpdateTopic := r.baseTopic + "/fl/rounds/+/updates/+"
+		if err := r.pubsub.Subscribe(
+			flUpdateTopic,
+			func(_ string, msg map[string]any) error {
+				return r.mqttFLUpdateHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerv1.FederatedJob{}).
 		Owns(&propellerv1.TrainingRound{}).
 		Complete(r)
+}
+
+// mqttFLRoundStartHandler handles FL round start messages from the FL
+// coordinator.  It creates or updates the corresponding FederatedJob and
+// TrainingRound resources.
+func (r *FederatedJobReconciler) mqttFLRoundStartHandler(ctx context.Context, msg map[string]any) error {
+	logger := log.FromContext(ctx)
+
+	roundID, _ := msg["round_id"].(string)
+	modelURI, _ := msg["model_uri"].(string)
+	taskWasmImage, _ := msg["task_wasm_image"].(string)
+	kOfN, _ := msg["k_of_n"].(float64)
+	timeoutS, _ := msg["timeout_seconds"].(float64)
+
+	participantsRaw, _ := msg["participants"].([]any)
+	participants := make([]string, 0, len(participantsRaw))
+	for _, p := range participantsRaw {
+		if s, ok := p.(string); ok {
+			participants = append(participants, s)
+		}
+	}
+
+	if roundID == "" || len(participants) == 0 {
+		logger.Info("invalid FL round start message", "msg", msg)
+		return nil
+	}
+
+	experimentID, _ := msg["experiment_id"].(string)
+	if experimentID == "" {
+		experimentID = roundID
+	}
+
+	hyperparamsRaw, _ := msg["hyperparams"].(map[string]any)
+	var hyperparams *apiextensionsv1.JSON
+	if len(hyperparamsRaw) > 0 {
+		raw, err := json.Marshal(hyperparamsRaw)
+		if err == nil {
+			hyperparams = &apiextensionsv1.JSON{Raw: raw}
+		}
+	}
+
+	federatedJob := &propellerv1.FederatedJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fl-" + experimentID,
+			Namespace: r.namespace,
+		},
+		Spec: propellerv1.FederatedJobSpec{
+			ExperimentID:   experimentID,
+			ModelRef:       modelURI,
+			TaskWasmImage:  taskWasmImage,
+			Participants:   makeParticipantSpecs(participants),
+			KOfN:           int(kOfN),
+			TimeoutSeconds: int(timeoutS),
+			Rounds: propellerv1.RoundConfig{
+				Total:    1,
+				Strategy: "sequential",
+			},
+			Aggregator: propellerv1.AggregatorConfig{
+				Algorithm: "fedavg",
+			},
+			Hyperparams: hyperparams,
+		},
+	}
+
+	if err := r.Create(ctx, federatedJob); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			logger.Error(err, "failed to create FederatedJob from FL round start")
+		}
+	}
+
+	logger.Info("FederatedJob created from FL round start",
+		"experimentID", experimentID,
+		"roundID", roundID,
+		"participants", len(participants))
+	return nil
+}
+
+// mqttFLUpdateHandler handles FL update messages from proplets.
+func (r *FederatedJobReconciler) mqttFLUpdateHandler(ctx context.Context, msg map[string]any) error {
+	return nil
+}
+
+func makeParticipantSpecs(ids []string) []propellerv1.ParticipantSpec {
+	specs := make([]propellerv1.ParticipantSpec, len(ids))
+	for i, id := range ids {
+		specs[i] = propellerv1.ParticipantSpec{PropletID: id}
+	}
+	return specs
 }
 
 //nolint:unparam // ctrl.Result is required by the interface signature

@@ -123,6 +123,12 @@ spec:
                         omitted the proplet uses the task Name as the function identifier, which
                         is the behaviour of the main propeller manager.
                       type: string
+                    halStoragePath:
+                      description: |-
+                        HalStoragePath is the path inside the proplet container where HAL
+                        (Hardware Abstraction Layer) storage is mounted. Maps to the
+                        hal_storage_path field in the propeller's StartRequest.
+                      type: string
                     imageUrl:
                       type: string
                     inputs:

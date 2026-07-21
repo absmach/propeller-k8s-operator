@@ -53,6 +53,10 @@ const indexDependsOn = "spec.dependsOn"
 // a stop command before the resource is removed from etcd.
 const TaskFinalizerName = "propeller.propeller.absmach.eu/task-finalizer"
 
+// registryRequestTopic is the topic on which proplets request WASM binaries
+// from the registry/proxy.  The operator responds with chunked payloads.
+const registryRequestTopic = "/registry/proplet"
+
 // mqttTaskUpdate carries the payload from an MQTT result or status message
 // delivered by a proplet.  It is stored in pendingResults by the MQTT goroutine
 // and consumed (LoadAndDelete) inside Reconcile so that all API writes remain
@@ -331,11 +335,13 @@ func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propeller
 		"cli_args":          task.Spec.CLIArgs,
 		"env":               task.Spec.Env,
 		"daemon":            task.Spec.Daemon,
-		"mode":              task.Spec.Mode,
 		"broadcast":         true,
 		"encrypted":         task.Spec.Encrypted,
 		"kbs_resource_path": task.Spec.KBSResourcePath,
 		"priority":          task.Spec.Priority,
+	}
+	if task.Spec.HalStoragePath != nil {
+		payload["hal_storage_path"] = *task.Spec.HalStoragePath
 	}
 
 	if task.Spec.Metadata != nil {
@@ -713,6 +719,9 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		"proplet_id":        mqttPropletID,
 		"priority":          task.Spec.Priority,
 	}
+	if task.Spec.HalStoragePath != nil {
+		payload["hal_storage_path"] = *task.Spec.HalStoragePath
+	}
 
 	if task.Spec.Metadata != nil {
 		var meta map[string]any
@@ -1019,6 +1028,65 @@ func (r *TaskReconciler) enqueueDependents(ctx context.Context, obj client.Objec
 	return requests
 }
 
+// mqttRegistryHandler handles chunked binary distribution requests from
+// proplets on /registry/proplet.  When a proplet requests a WASM binary,
+// the operator responds on /registry/server with chunked payloads.
+func (r *TaskReconciler) mqttRegistryHandler(ctx context.Context, msg map[string]any) error {
+	appName, ok := msg["app_name"].(string)
+	if !ok || appName == "" {
+		return nil
+	}
+
+	logger := log.FromContext(ctx)
+	logger.Info("registry request received", "app_name", appName)
+
+	var tasks propellerapiv1.TaskList
+	if err := r.List(ctx, &tasks, client.InNamespace(r.Namespace)); err != nil {
+		return err
+	}
+
+	for _, task := range tasks.Items {
+		if task.Spec.ImageURL != appName {
+			continue
+		}
+		if len(task.Spec.File) == 0 {
+			continue
+		}
+
+		// Chunk the WASM binary into 256KB chunks and publish each one.
+		const chunkSize = 256 * 1024
+		data := task.Spec.File
+		totalChunks := (len(data) + chunkSize - 1) / chunkSize
+		responseTopic := r.baseTopic + "/registry/server"
+
+		for i := range totalChunks {
+			start := i * chunkSize
+			end := start + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+
+			chunkPayload := map[string]any{
+				"app_name":     appName,
+				"chunk_idx":    i,
+				"total_chunks": totalChunks,
+				"data":         data[start:end],
+			}
+
+			if err := r.pubsub.Publish(responseTopic, chunkPayload); err != nil {
+				logger.Error(err, "failed to publish registry chunk", "chunk", i, "total", totalChunks)
+				return err
+			}
+		}
+
+		logger.Info("registry binary distributed", "app_name", appName, "chunks", totalChunks)
+		return nil
+	}
+
+	logger.Info("no task found with matching image URL for registry request", "app_name", appName)
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
 	r.pubsub = pubsub
@@ -1041,8 +1109,9 @@ func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.M
 		return fmt.Errorf("failed to register %s field index: %w", indexDependsOn, err)
 	}
 
-	// Subscribe to proplet result and metrics topics; task lifecycle topics are
-	// separate from proplet liveness (handled by PropletReconciler).
+	// Subscribe to proplet result, metrics, and registry request topics.
+	// Task lifecycle topics are separate from proplet liveness (handled by
+	// PropletReconciler).
 	if r.pubsub != nil {
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/results",
@@ -1056,6 +1125,14 @@ func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.M
 			r.baseTopic+"/control/proplet/task_metrics",
 			func(_ string, msg map[string]any) error {
 				return r.mqttTaskMetricsHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+registryRequestTopic,
+			func(_ string, msg map[string]any) error {
+				return r.mqttRegistryHandler(context.Background(), msg)
 			},
 		); err != nil {
 			return err

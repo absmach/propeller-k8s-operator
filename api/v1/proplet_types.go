@@ -85,6 +85,48 @@ type ExternalPropletSpec struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
+// PropletEnvConfig holds optional environment overrides for a k8s proplet.
+type PropletEnvConfig struct {
+	// LivelinessInterval sets PROPLET_LIVELINESS_INTERVAL (default 10s).
+	LivelinessInterval *metav1.Duration `json:"livelinessInterval,omitempty"`
+	// MetricsInterval sets PROPLET_METRICS_INTERVAL (default 10s).
+	MetricsInterval *metav1.Duration `json:"metricsInterval,omitempty"`
+	// MetricsPort sets PROPLET_METRICS_PORT (default 9092).
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+	// MetricsEnabled sets PROPLET_METRICS_ENABLED (default true).
+	MetricsEnabled *bool `json:"metricsEnabled,omitempty"`
+	// ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME (path to wasmtime binary).
+	ExternalWasmRuntime string `json:"externalWasmRuntime,omitempty"`
+	// HalEnabled sets PROPLET_HAL_ENABLED.
+	HalEnabled *bool `json:"halEnabled,omitempty"`
+	// HttpEnabled sets PROPLET_HTTP_ENABLED.
+	HttpEnabled *bool `json:"httpEnabled,omitempty"`
+	// UsbEnabled sets PROPLET_USB_ENABLED.
+	UsbEnabled *bool `json:"usbEnabled,omitempty"`
+	// OtelURL sets PROPLET_OTEL_URL for OpenTelemetry.
+	OtelURL string `json:"otelUrl,omitempty"`
+	// TraceRatio sets PROPLET_TRACE_RATIO as a string (e.g. "0.5").
+	TraceRatio string `json:"traceRatio,omitempty"`
+	// Tags sets PROPLET_TAGS as a comma-separated list.
+	Tags string `json:"tags,omitempty"`
+	// Location sets PROPLET_LOCATION.
+	Location string `json:"location,omitempty"`
+	// Description sets PROPLET_DESCRIPTION.
+	Description string `json:"description,omitempty"`
+	// KbsURI sets PROPLET_KBS_URI for confidential computing.
+	KbsURI string `json:"kbsUri,omitempty"`
+	// AaConfigPath sets PROPLET_AA_CONFIG_PATH for confidential computing.
+	AaConfigPath string `json:"aaConfigPath,omitempty"`
+	// MqttTLSCACert sets PROPLET_MQTT_TLS_CA_CERT.
+	MqttTLSCACert string `json:"mqttTlsCaCert,omitempty"`
+	// MqttTLSClientCert sets PROPLET_MQTT_TLS_CLIENT_CERT.
+	MqttTLSClientCert string `json:"mqttTlsClientCert,omitempty"`
+	// MqttTLSClientKey sets PROPLET_MQTT_TLS_CLIENT_KEY.
+	MqttTLSClientKey string `json:"mqttTlsClientKey,omitempty"`
+	// MqttTLSInsecureSkipVerify sets PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY.
+	MqttTLSInsecureSkipVerify *bool `json:"mqttTlsInsecureSkipVerify,omitempty"`
+}
+
 // K8sPropletSpec defines the configuration for a Kubernetes-backed Proplet.
 type K8sPropletSpec struct {
 	// +kubebuilder:validation:Required
@@ -100,6 +142,8 @@ type K8sPropletSpec struct {
 	// PluginDir is the path inside the proplet container where WASM plugin files are loaded from.
 	// Maps to the PROPLET_PLUGIN_DIR environment variable. Leave empty to disable plugins.
 	PluginDir string `json:"pluginDir,omitempty"`
+	// Env holds optional environment overrides for the proplet container.
+	Env *PropletEnvConfig `json:"env,omitempty,omitzero"`
 }
 
 // ConnectionConfig defines the MQTT connection configuration for a Proplet.
