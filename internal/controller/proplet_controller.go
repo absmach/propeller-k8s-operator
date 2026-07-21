@@ -346,6 +346,52 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 		})
 	}
 
+	if cfg := proplet.Spec.K8s.Env; cfg != nil {
+		addEnv := func(k, v string) {
+			if v != "" {
+				envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
+			}
+		}
+		addBoolEnv := func(k string, v *bool) {
+			if v != nil {
+				val := "false"
+				if *v {
+					val = "true"
+				}
+				envVars = append(envVars, corev1.EnvVar{Name: k, Value: val})
+			}
+		}
+		addDurationEnv := func(k string, v *metav1.Duration) {
+			if v != nil {
+				envVars = append(envVars, corev1.EnvVar{Name: k, Value: v.Duration.String()})
+			}
+		}
+		addIntEnv := func(k string, v *int32) {
+			if v != nil {
+				envVars = append(envVars, corev1.EnvVar{Name: k, Value: fmt.Sprintf("%d", *v)})
+			}
+		}
+		addDurationEnv("PROPLET_LIVELINESS_INTERVAL", cfg.LivelinessInterval)
+		addDurationEnv("PROPLET_METRICS_INTERVAL", cfg.MetricsInterval)
+		addIntEnv("PROPLET_METRICS_PORT", cfg.MetricsPort)
+		addBoolEnv("PROPLET_METRICS_ENABLED", cfg.MetricsEnabled)
+		addEnv("PROPLET_EXTERNAL_WASM_RUNTIME", cfg.ExternalWasmRuntime)
+		addBoolEnv("PROPLET_HAL_ENABLED", cfg.HalEnabled)
+		addBoolEnv("PROPLET_HTTP_ENABLED", cfg.HttpEnabled)
+		addBoolEnv("PROPLET_USB_ENABLED", cfg.UsbEnabled)
+		addEnv("PROPLET_OTEL_URL", cfg.OtelURL)
+		addEnv("PROPLET_TRACE_RATIO", cfg.TraceRatio)
+		addEnv("PROPLET_TAGS", cfg.Tags)
+		addEnv("PROPLET_LOCATION", cfg.Location)
+		addEnv("PROPLET_DESCRIPTION", cfg.Description)
+		addEnv("PROPLET_KBS_URI", cfg.KbsURI)
+		addEnv("PROPLET_AA_CONFIG_PATH", cfg.AaConfigPath)
+		addEnv("PROPLET_MQTT_TLS_CA_CERT", cfg.MqttTLSCACert)
+		addEnv("PROPLET_MQTT_TLS_CLIENT_CERT", cfg.MqttTLSClientCert)
+		addEnv("PROPLET_MQTT_TLS_CLIENT_KEY", cfg.MqttTLSClientKey)
+		addBoolEnv("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY", cfg.MqttTLSInsecureSkipVerify)
+	}
+
 	return envVars
 }
 
@@ -715,6 +761,65 @@ func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg m
 	return nil
 }
 
+// mqttDiscoveryHandler is invoked when a proplet publishes a discovery
+// (registration) message on /control/proplet/create.  If the proplet is not
+// already registered as a Proplet CR, it creates one automatically.
+func (r *PropletReconciler) mqttDiscoveryHandler(ctx context.Context, msg map[string]any) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok || propletID == "" {
+		return nil
+	}
+
+	// Check if a Proplet CR already exists with this entity ID.
+	var existing propellerv1.PropletList
+	if err := r.List(ctx, &existing, client.InNamespace(r.Namespace)); err != nil {
+		return err
+	}
+	for _, p := range existing.Items {
+		if p.Spec.ConnectionConfig.EntityID == propletID {
+			return nil // already registered
+		}
+	}
+
+	logger := logf.FromContext(ctx).WithValues("proplet_id", propletID)
+	logger.Info("auto-registering external proplet from discovery message")
+
+	tenantID := ""
+	channelID := ""
+	if parts := r.baseTopic; len(parts) > 0 {
+		if _, err := fmt.Sscanf(parts, "m/%s/c/%s", &tenantID, &channelID); err != nil {
+			tenantID = ""
+			channelID = ""
+		}
+	}
+
+	proplet := &propellerv1.Proplet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "discovered-" + propletID,
+			Namespace: r.Namespace,
+		},
+		Spec: propellerv1.PropletSpec{
+			Type: propellerv1.ExternalProplet,
+			External: &propellerv1.ExternalPropletSpec{
+				DeviceType: "external",
+			},
+			ConnectionConfig: propellerv1.ConnectionConfig{
+				MQTTAddress: "tcp://mqtt:1883",
+				TenantID:    tenantID,
+				ChannelID:   channelID,
+				EntityID:    propletID,
+			},
+		},
+	}
+
+	if err := r.Create(ctx, proplet); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			logger.Error(err, "failed to create auto-registered proplet")
+		}
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *PropletReconciler) SetupWithManager(
 	tenantID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
@@ -725,8 +830,9 @@ func (r *PropletReconciler) SetupWithManager(
 	r.baseTopic = fmt.Sprintf(baseTopicFmt, tenantID, channelID)
 	r.propletEvents = make(chan event.GenericEvent, 256)
 
-	// Subscribe to liveness and proplet-level metrics topics. Task result topics
-	// are handled by TaskReconciler to respect separation of responsibilities.
+	// Subscribe to liveness, proplet-level metrics, and proplet discovery
+	// topics. Task result topics are handled by TaskReconciler to respect
+	// separation of responsibilities.
 	if r.pubsub != nil {
 		if err := r.pubsub.Subscribe(
 			r.baseTopic+"/control/proplet/alive",
@@ -740,6 +846,14 @@ func (r *PropletReconciler) SetupWithManager(
 			r.baseTopic+"/control/proplet/metrics",
 			func(_ string, msg map[string]any) error {
 				return r.mqttPropletMetricsHandler(context.Background(), msg)
+			},
+		); err != nil {
+			return err
+		}
+		if err := r.pubsub.Subscribe(
+			r.baseTopic+"/control/proplet/create",
+			func(_ string, msg map[string]any) error {
+				return r.mqttDiscoveryHandler(context.Background(), msg)
 			},
 		); err != nil {
 			return err
