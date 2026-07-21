@@ -1,0 +1,33 @@
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: PropellerJob
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: sample-propeller-job
+spec:
+  name: sample-propeller-job
+  executionMode: parallel
+  tasks:
+    - name: job-task-1
+      functionName: main
+      file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
+      inputs:
+        - "10"
+        - "20"
+      propletSelector:
+        propletId: "external-proplet"
+      mode: infer
+      daemon: false
+    - name: job-task-2
+      functionName: main
+      file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
+      inputs:
+        - "30"
+        - "40"
+      propletSelector:
+        propletId: "external-proplet"
+      mode: infer
+      daemon: false
+  taskRefs:
+    - "wasm-addition"

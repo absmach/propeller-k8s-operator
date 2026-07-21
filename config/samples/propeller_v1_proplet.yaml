@@ -1,8 +1,3 @@
-# Kubernetes Proplet sample — runs the proplet as a pod managed by the operator
-# inside the cluster. The operator creates and manages the underlying Deployment.
-#
-# For a full walkthrough including credential provisioning and task execution, see:
-# https://propeller.absmach.eu/docs/examples/kubernetes-operator
 apiVersion: propeller.propeller.absmach.eu/v1
 kind: Proplet
 metadata:
@@ -21,7 +16,7 @@ spec:
     channelId: "<your-channel-id>"
     entityId: "<your-proplet-entity-id>"
     apiKey: "<your-proplet-api-key>"
-    mqttAddress: "tcp://<your-mqtt-broker>:1883"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
     mqttQos: 0
     mqttTimeout: 30s
   resources:

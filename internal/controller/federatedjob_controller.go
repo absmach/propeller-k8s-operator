@@ -43,7 +43,7 @@ func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if federatedJob.Status.Phase == "" {
 		federatedJob.Status.Phase = phasePending
 		if err := r.Status().Update(ctx, federatedJob); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
 
@@ -84,7 +84,7 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 		job.Status.Phase = phaseFailed
 		r.updateCondition(job, "False", "InvalidSpec", err.Error())
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 
 		return ctrl.Result{}, nil
@@ -122,7 +122,7 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 	job.Status.CurrentRound = 1
 	r.updateCondition(job, "True", "Running", "Job is running")
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -188,7 +188,7 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 		}
 
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 
 		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
@@ -197,7 +197,7 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 		job.Status.Phase = phaseFailed
 		r.updateCondition(job, "False", "RoundFailed", "Training round failed")
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 
 		return ctrl.Result{}, nil

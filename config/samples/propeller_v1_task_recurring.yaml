@@ -4,19 +4,22 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: wasm-addition
+  name: recurring-task
 spec:
-  name: wasm-addition
+  name: recurring-task
   functionName: main
   kind: standard
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   inputs:
     - "10"
-    - "32"
+    - "20"
   env:
     EXAMPLE_ENV: "example-value"
   mode: infer
   daemon: false
   priority: 50
+  schedule: "*/5 * * * *"
+  isRecurring: true
+  timezone: UTC
   propletSelector:
-    propletId: "k8s-proplet"
+    propletId: "external-proplet"

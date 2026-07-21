@@ -58,7 +58,7 @@ func (r *TrainingRoundReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		round.Status.StartTime = &now
 		round.Status.UpdatesRequired = round.Spec.KOfN
 		if err := r.Status().Update(ctx, round); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
 
@@ -192,7 +192,7 @@ func (r *TrainingRoundReconciler) handlePending(ctx context.Context, round *prop
 	round.Status.Phase = phaseRunning
 	r.updateCondition(round, "True", "Running", "Round is running")
 	if err := r.Status().Update(ctx, round); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
@@ -270,7 +270,7 @@ func (r *TrainingRoundReconciler) handleAggregating(ctx context.Context, round *
 	r.updateCondition(round, "True", "Completed", fmt.Sprintf("Round completed and aggregated %d updates", len(collectedUpdates)))
 
 	if err := r.Status().Update(ctx, round); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	logger.Info("round completed", "round", round.Name, "aggregatedModel", round.Status.AggregatedModelRef, "updates", len(collectedUpdates))
@@ -293,7 +293,7 @@ func (r *TrainingRoundReconciler) processParticipants(ctx context.Context, round
 			Name:      participant.TaskRef.Name,
 			Namespace: participant.TaskRef.Namespace,
 		}, task); err != nil {
-			logger.Error(err, "failed to get task", "task", participant.TaskRef.Name)
+			logger.V(1).Info("participant task not yet created or already deleted", "task", participant.TaskRef.Name, "error", err)
 
 			continue
 		}
@@ -352,7 +352,7 @@ func (r *TrainingRoundReconciler) transitionToAggregating(ctx context.Context, r
 	round.Status.Phase = "Aggregating"
 	r.updateCondition(round, "True", "Aggregating", fmt.Sprintf("Collected %d updates, starting aggregation", updatesReceived))
 	if err := r.Status().Update(ctx, round); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: time.Second * 2}, nil
@@ -418,7 +418,7 @@ func (r *TrainingRoundReconciler) storeAggregatedUpdate(round *propellerapiv1.Tr
 
 func (r *TrainingRoundReconciler) updateStatusAndRequeue(ctx context.Context, round *propellerapiv1.TrainingRound, requeueAfter time.Duration) (ctrl.Result, error) {
 	if err := r.Status().Update(ctx, round); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil

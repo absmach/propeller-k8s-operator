@@ -4,19 +4,28 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: wasm-addition
+  name: monitored-task
 spec:
-  name: wasm-addition
+  name: monitored-task
   functionName: main
   kind: standard
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   inputs:
     - "10"
     - "32"
-  env:
-    EXAMPLE_ENV: "example-value"
   mode: infer
   daemon: false
   priority: 50
+  monitoringProfile:
+    enabled: true
+    interval: 10s
+    collectCpu: true
+    collectMemory: true
+    collectDiskIo: false
+    collectThreads: false
+    collectFileDescriptors: false
+    exportToMqtt: true
+    retainHistory: true
+    historySize: 10
   propletSelector:
-    propletId: "k8s-proplet"
+    propletId: "external-proplet"

@@ -356,13 +356,10 @@ func (r *PropletReconciler) deploymentNeedsUpdate(current, desired *appsv1.Deplo
 	if len(current.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
 		cc := current.Spec.Template.Spec.Containers[0]
 		dc := desired.Spec.Template.Spec.Containers[0]
-		if cc.Image != dc.Image {
-			return true
-		}
-		if !reflect.DeepEqual(cc.Env, dc.Env) {
-			return true
-		}
-		if !reflect.DeepEqual(cc.Resources, dc.Resources) {
+		if cc.Image != dc.Image ||
+			cc.ImagePullPolicy != dc.ImagePullPolicy ||
+			!reflect.DeepEqual(cc.Env, dc.Env) ||
+			!reflect.DeepEqual(cc.Resources, dc.Resources) {
 			return true
 		}
 	}

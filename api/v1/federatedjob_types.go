@@ -60,8 +60,9 @@ type FederatedJob struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   FederatedJobSpec   `json:"spec"`
-	Status FederatedJobStatus `json:"status"`
+	Spec FederatedJobSpec `json:"spec"`
+	// +optional
+	Status FederatedJobStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

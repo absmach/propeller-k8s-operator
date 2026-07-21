@@ -17,8 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"flag"
+	"math/big"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,6 +56,62 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+func ensureCerts(certDir, certName, certKey string) error {
+	certFile := filepath.Join(certDir, certName)
+	keyFile := filepath.Join(certDir, certKey)
+	if _, err := os.Stat(certFile); err == nil {
+		if _, err := os.Stat(keyFile); err == nil {
+			return nil
+		}
+	}
+
+	setupLog.Info("Generating self-signed webhook TLS certificates", "dir", certDir)
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "propeller-webhook"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		return err
+	}
+
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		return err
+	}
+	defer certOut.Close()
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		return err
+	}
+
+	keyOut, err := os.Create(keyFile)
+	if err != nil {
+		return err
+	}
+	defer keyOut.Close()
+	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}); err != nil {
+		return err
+	}
+
+	setupLog.Info("Self-signed webhook TLS certificates generated", "cert", certFile, "key", keyFile)
+	return nil
+}
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -78,7 +140,7 @@ func main() {
 	var apiKey string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8181", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -152,7 +214,17 @@ func main() {
 		})
 	}
 
+	webhookCertDir := webhookCertPath
+	if webhookCertDir == "" {
+		webhookCertDir = filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
+	}
+	if err := ensureCerts(webhookCertDir, webhookCertName, webhookCertKey); err != nil {
+		setupLog.Error(err, "Failed to ensure webhook certificates")
+		os.Exit(1)
+	}
+
 	webhookServer := webhook.NewServer(webhook.Options{
+		CertDir: webhookCertDir,
 		TLSOpts: webhookTLSOpts,
 	})
 
