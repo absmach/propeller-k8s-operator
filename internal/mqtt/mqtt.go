@@ -154,7 +154,7 @@ func newClient(address, id, username, password, tenantID, channelID string, time
 		args := []any{}
 		if options != nil {
 			args = append(args,
-				"entity_id", options.ClientID,
+				"client_id", options.ClientID,
 				"username", options.Username,
 			)
 		}

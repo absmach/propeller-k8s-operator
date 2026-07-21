@@ -121,7 +121,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if update, updated := r.applyMQTTUpdate(task); updated {
 		if err := r.Status().Update(ctx, task); err != nil {
 			r.pendingResults.Store(string(task.UID), update)
-			return ctrl.Result{RequeueAfter: time.Second}, nil
+			return statusUpdateError(err)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -281,9 +281,12 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		return ctrl.Result{}, err
 	}
 
-	// WASM file tasks go via MQTT even for k8s-backed proplets,
-	// since the proplet's Wasmtime runtime handles execution.
-	if backend == propellerapiv1.K8sProplet && len(task.Spec.File) == 0 {
+	// WASM file tasks always go via MQTT, since the proplet's Wasmtime
+	// runtime handles execution regardless of backend type.
+	if len(task.Spec.File) > 0 {
+		return r.startExternalTask(ctx, task, propletID)
+	}
+	if backend == propellerapiv1.K8sProplet {
 		return r.startK8sJob(ctx, task, propletID)
 	}
 	return r.startExternalTask(ctx, task, propletID)
@@ -373,7 +376,7 @@ func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propeller
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Broadcast task dispatched via MQTT")
 	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
+		return statusUpdateError(err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -542,7 +545,12 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 
 	image := task.Spec.ImageURL
 	if image == "" {
-		return ctrl.Result{}, fmt.Errorf("no container image specified: set spec.imageUrl for k8s-backed tasks")
+		now := metav1.Now()
+		task.Status.Phase = propellerapiv1.TaskFailedPhase
+		task.Status.FinishedAt = &now
+		task.Status.Error = "no container image specified: set spec.imageUrl for k8s-backed tasks"
+		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "InvalidSpec", task.Status.Error)
+		return ctrl.Result{}, r.Status().Update(ctx, task)
 	}
 
 	configMapName := task.Name + "-config"
@@ -629,7 +637,7 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Task is running via K8s Job")
 	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
+		return statusUpdateError(err)
 	}
 
 	return ctrl.Result{}, nil
@@ -745,7 +753,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 
 	now := metav1.Now()
 	task.Status.Phase = propellerapiv1.TaskRunningPhase
-	task.Status.AssignedProplet = propletID
+	task.Status.AssignedProplet = mqttPropletID
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "External task dispatched via MQTT")
 	if err := r.Status().Update(ctx, task); err != nil {
@@ -855,6 +863,16 @@ func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionTyp
 		}
 	}
 	task.Status.Conditions = append(task.Status.Conditions, cond)
+}
+
+// statusUpdateError returns a requeue for conflict errors (stale informer cache)
+// and passes through all other errors so controller-runtime can log and back off.
+func statusUpdateError(err error) (ctrl.Result, error) {
+	if apierrors.IsConflict(err) {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	return ctrl.Result{}, err
 }
 
 // applyPendingMetrics checks pendingMetrics for a snapshot stored by the MQTT

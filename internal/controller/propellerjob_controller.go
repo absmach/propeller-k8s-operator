@@ -75,7 +75,7 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		job.Status.UpdatedAt = &now
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{RequeueAfter: time.Second}, nil
+			return statusUpdateError(err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propell
 	job.Status.StartTime = &now
 	job.Status.UpdatedAt = &now
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
+		return statusUpdateError(err)
 	}
 
 	return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
@@ -196,7 +196,7 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	}
 
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
+		return statusUpdateError(err)
 	}
 
 	if job.Status.Phase == propellerapiv1.JobPhaseRunning {
