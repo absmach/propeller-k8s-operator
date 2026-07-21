@@ -24,10 +24,10 @@ type FederatedJobReconciler struct {
 
 const federatedJobConditionReady = "Ready"
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=federatedjobs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=trainingrounds/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=federatedjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=federatedjobs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=trainingrounds/status,verbs=get;update;patch
 
 func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -43,7 +43,7 @@ func (r *FederatedJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if federatedJob.Status.Phase == "" {
 		federatedJob.Status.Phase = phasePending
 		if err := r.Status().Update(ctx, federatedJob); err != nil {
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 	}
 
@@ -84,7 +84,7 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 		job.Status.Phase = phaseFailed
 		r.updateCondition(job, "False", "InvalidSpec", err.Error())
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 
 		return ctrl.Result{}, nil
@@ -122,7 +122,7 @@ func (r *FederatedJobReconciler) handlePending(ctx context.Context, job *propell
 	job.Status.CurrentRound = 1
 	r.updateCondition(job, "True", "Running", "Job is running")
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -154,8 +154,8 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 			}
 
 			nextRoundAnnotations := make(map[string]string)
-			if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.abstractmachines.fr/aggregated-update"]; ok {
-				nextRoundAnnotations["propeller.propeller.abstractmachines.fr/aggregated-update"] = aggregatedUpdateJSON
+			if aggregatedUpdateJSON, ok := round.Annotations["propeller.propeller.absmach.eu/aggregated-update"]; ok {
+				nextRoundAnnotations["propeller.propeller.absmach.eu/aggregated-update"] = aggregatedUpdateJSON
 			}
 
 			nextRound := &propellerv1.TrainingRound{
@@ -188,7 +188,7 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 		}
 
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 
 		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
@@ -197,7 +197,7 @@ func (r *FederatedJobReconciler) handleRunning(ctx context.Context, job *propell
 		job.Status.Phase = phaseFailed
 		r.updateCondition(job, "False", "RoundFailed", "Training round failed")
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 
 		return ctrl.Result{}, nil

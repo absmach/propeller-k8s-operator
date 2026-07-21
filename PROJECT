@@ -3,7 +3,7 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.7.1
-domain: propeller.abstractmachines.fr
+domain: propeller.absmach.eu
 layout:
 - go.kubebuilder.io/v4
 projectName: propeller-k8s-operator
@@ -13,7 +13,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: propeller.abstractmachines.fr
+  domain: propeller.absmach.eu
   group: propeller
   kind: Task
   path: github.com/absmach/propeller/api/v1
@@ -22,7 +22,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: propeller.abstractmachines.fr
+  domain: propeller.absmach.eu
   group: propeller
   kind: Proplet
   path: github.com/absmach/propeller/api/v1

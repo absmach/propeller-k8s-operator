@@ -2,11 +2,11 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/propeller.propeller.abstractmachines.fr_proplets.yaml
-- bases/propeller.propeller.abstractmachines.fr_tasks.yaml
-- bases/propeller.propeller.abstractmachines.fr_propellerjobs.yaml
-- bases/propeller.propeller.abstractmachines.fr_federatedjobs.yaml
-- bases/propeller.propeller.abstractmachines.fr_trainingrounds.yaml
+  - bases/propeller.propeller.absmach.eu_proplets.yaml
+  - bases/propeller.propeller.absmach.eu_tasks.yaml
+  - bases/propeller.propeller.absmach.eu_propellerjobs.yaml
+  - bases/propeller.propeller.absmach.eu_federatedjobs.yaml
+  - bases/propeller.propeller.absmach.eu_trainingrounds.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 # patches:

@@ -15,7 +15,7 @@ webhooks:
   name: mtask-v1.kb.io
   rules:
   - apiGroups:
-    - propeller.propeller.abstractmachines.fr
+    - propeller.propeller.absmach.eu
     apiVersions:
     - v1
     operations:
@@ -41,7 +41,7 @@ webhooks:
   name: vproplet-v1.kb.io
   rules:
   - apiGroups:
-    - propeller.propeller.abstractmachines.fr
+    - propeller.propeller.absmach.eu
     apiVersions:
     - v1
     operations:
@@ -61,7 +61,7 @@ webhooks:
   name: vtask-v1.kb.io
   rules:
   - apiGroups:
-    - propeller.propeller.abstractmachines.fr
+    - propeller.propeller.absmach.eu
     apiVersions:
     - v1
     operations:

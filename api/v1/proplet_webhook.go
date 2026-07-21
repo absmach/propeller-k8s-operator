@@ -40,7 +40,7 @@ func SetupPropletWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-proplet,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=create;update,versions=v1,name=vproplet-v1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-propeller-propeller-abstractmachines-fr-v1-proplet,mutating=false,failurePolicy=fail,sideEffects=None,groups=propeller.propeller.absmach.eu,resources=proplets,verbs=create;update,versions=v1,name=vproplet-v1.kb.io,admissionReviewVersions=v1
 
 // PropletCustomValidator validates Proplet resources.
 type PropletCustomValidator struct{}
@@ -76,20 +76,20 @@ func (v *PropletCustomValidator) validateProplet(proplet *Proplet) error {
 	var allErrs field.ErrorList
 
 	cfg := proplet.Spec.ConnectionConfig
-	hasPlain := cfg.ClientKey != ""
-	hasRef := cfg.ClientKeySecretRef != nil
+	hasPlain := cfg.APIKey != ""
+	hasRef := cfg.APIKeySecretRef != nil
 
 	if !hasPlain && !hasRef {
 		allErrs = append(allErrs, field.Required(
-			field.NewPath("spec", "connectionConfig", "clientKey"),
-			"exactly one of clientKey or clientKeySecretRef must be set",
+			field.NewPath("spec", "connectionConfig", "apiKey"),
+			"exactly one of apiKey or apiKeySecretRef must be set",
 		))
 	}
 	if hasPlain && hasRef {
 		allErrs = append(allErrs, field.Invalid(
-			field.NewPath("spec", "connectionConfig", "clientKey"),
-			cfg.ClientKey,
-			"clientKey and clientKeySecretRef are mutually exclusive; set exactly one",
+			field.NewPath("spec", "connectionConfig", "apiKey"),
+			cfg.APIKey,
+			"apiKey and apiKeySecretRef are mutually exclusive; set exactly one",
 		))
 	}
 
@@ -97,7 +97,7 @@ func (v *PropletCustomValidator) validateProplet(proplet *Proplet) error {
 		return nil
 	}
 	return apierrors.NewInvalid(
-		schema.GroupKind{Group: "propeller.propeller.abstractmachines.fr", Kind: "Proplet"},
+		schema.GroupKind{Group: "propeller.propeller.absmach.eu", Kind: "Proplet"},
 		proplet.Name,
 		allErrs,
 	)

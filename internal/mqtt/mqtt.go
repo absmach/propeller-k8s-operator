@@ -24,7 +24,7 @@ var (
 	errEmptyClientID      = errors.New("empty client ID")
 
 	aliveTopicTemplate = "m/%s/c/%s/control/proplet/alive"
-	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
+	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","channel_id":"%s"}`
 	mqttLogger         = logf.Log.WithName("mqtt")
 )
 
@@ -43,12 +43,12 @@ type PubSub interface {
 	Disconnect() error
 }
 
-func NewPubSub(url string, qos byte, id, username, password, domainID, channelID string, timeout time.Duration) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password, tenantID, channelID string, timeout time.Duration) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyClientID
 	}
 
-	client, err := newClient(url, id, username, password, domainID, channelID, timeout)
+	client, err := newClient(url, id, username, password, tenantID, channelID, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (ps *pubsub) Disconnect() error {
 	return nil
 }
 
-func newClient(address, id, username, password, domainID, channelID string, timeout time.Duration) (mqtt.Client, error) {
+func newClient(address, id, username, password, tenantID, channelID string, timeout time.Duration) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
@@ -133,11 +133,11 @@ func newClient(address, id, username, password, domainID, channelID string, time
 		SetMaxReconnectInterval(reconnTimeout * time.Minute)
 
 	if channelID != "" {
-		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
+		topic := fmt.Sprintf(aliveTopicTemplate, tenantID, channelID)
 		// Use the MQTT client ID (id) as proplet_id — this matches the field
 		// the PropletReconciler's alive handler matches against
-		// Spec.ConnectionConfig.ClientID.  username is the client key/password,
-		// not the client identity.
+		// Spec.ConnectionConfig.EntityID.  username is the API key/password,
+		// not the entity identity.
 		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, id, channelID)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}

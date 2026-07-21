@@ -51,7 +51,7 @@ const indexDependsOn = "spec.dependsOn"
 
 // TaskFinalizerName is the finalizer added to external tasks so we can send
 // a stop command before the resource is removed from etcd.
-const TaskFinalizerName = "propeller.propeller.abstractmachines.fr/task-finalizer"
+const TaskFinalizerName = "propeller.propeller.absmach.eu/task-finalizer"
 
 // mqttTaskUpdate carries the payload from an MQTT result or status message
 // delivered by a proplet.  It is stored in pendingResults by the MQTT goroutine
@@ -71,7 +71,7 @@ type TaskReconciler struct {
 	Namespace string
 	sched     scheduler.Scheduler
 	pubsub    mqtt.PubSub
-	domainID  string
+	tenantID  string
 	channelID string
 	baseTopic string
 
@@ -90,14 +90,14 @@ type TaskReconciler struct {
 	pendingMetrics sync.Map
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets,verbs=get;list
 
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -116,11 +116,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Consume any MQTT update (result/status) that arrived from a proplet since
 	// the last reconcile.  If one is present, persist the new phase and return;
 	// the status-change event will trigger the next reconcile to process it.
+	// A conflict error means the informer cache is stale — re-queue without logging
+	// an error since the next reconcile will retry with fresh data.
 	if update, updated := r.applyMQTTUpdate(task); updated {
 		if err := r.Status().Update(ctx, task); err != nil {
-			// Put the update back so the next reconcile can retry persisting it.
 			r.pendingResults.Store(string(task.UID), update)
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -280,12 +281,15 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		return ctrl.Result{}, err
 	}
 
-	switch backend {
-	case propellerapiv1.K8sProplet:
-		return r.startK8sJob(ctx, task, propletID)
-	default:
+	// WASM file tasks always go via MQTT, since the proplet's Wasmtime
+	// runtime handles execution regardless of backend type.
+	if len(task.Spec.File) > 0 {
 		return r.startExternalTask(ctx, task, propletID)
 	}
+	if backend == propellerapiv1.K8sProplet {
+		return r.startK8sJob(ctx, task, propletID)
+	}
+	return r.startExternalTask(ctx, task, propletID)
 }
 
 // startBroadcastTask publishes a start command with no proplet_id so that all
@@ -372,7 +376,7 @@ func (r *TaskReconciler) startBroadcastTask(ctx context.Context, task *propeller
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Broadcast task dispatched via MQTT")
 	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{}, err
+		return statusUpdateError(err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -539,6 +543,16 @@ func (r *TaskReconciler) determineBackend(ctx context.Context, namespace, prople
 func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	image := task.Spec.ImageURL
+	if image == "" {
+		now := metav1.Now()
+		task.Status.Phase = propellerapiv1.TaskFailedPhase
+		task.Status.FinishedAt = &now
+		task.Status.Error = "no container image specified: set spec.imageUrl for k8s-backed tasks"
+		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "InvalidSpec", task.Status.Error)
+		return ctrl.Result{}, r.Status().Update(ctx, task)
+	}
+
 	configMapName := task.Name + "-config"
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -588,7 +602,7 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 					Containers: []corev1.Container{
 						{
 							Name:  "task",
-							Image: task.Spec.ImageURL,
+							Image: image,
 							Args:  task.Spec.CLIArgs,
 							EnvFrom: []corev1.EnvFromSource{
 								{
@@ -623,7 +637,7 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Task is running via K8s Job")
 	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{}, err
+		return statusUpdateError(err)
 	}
 
 	return ctrl.Result{}, nil
@@ -631,6 +645,16 @@ func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.T
 
 func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Use the proplet's MQTT entity_id for the proplet_id field,
+	// since that's what the proplet runtime compares against.
+	proplet := &propellerapiv1.Proplet{}
+	mqttPropletID := propletID
+	if err := r.Get(ctx, client.ObjectKey{Name: propletID, Namespace: task.Namespace}, proplet); err == nil {
+		if proplet.Spec.ConnectionConfig.EntityID != "" {
+			mqttPropletID = proplet.Spec.ConnectionConfig.EntityID
+		}
+	}
 
 	if r.pubsub == nil {
 		task.Status.Phase = propellerapiv1.TaskFailedPhase
@@ -655,7 +679,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 	for k, v := range task.Spec.Env {
 		env[k] = v
 	}
-	env["PROPLET_ID"] = propletID
+	env["PROPLET_ID"] = mqttPropletID
 	env["TASK_ID"] = string(task.UID)
 
 	// scheduledState matches task.Scheduled (=1) in the main propeller's
@@ -686,7 +710,7 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 		"mode":              task.Spec.Mode,
 		"encrypted":         task.Spec.Encrypted,
 		"kbs_resource_path": task.Spec.KBSResourcePath,
-		"proplet_id":        propletID,
+		"proplet_id":        mqttPropletID,
 		"priority":          task.Spec.Priority,
 	}
 
@@ -729,11 +753,11 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 
 	now := metav1.Now()
 	task.Status.Phase = propellerapiv1.TaskRunningPhase
-	task.Status.AssignedProplet = propletID
+	task.Status.AssignedProplet = mqttPropletID
 	task.Status.StartedAt = &now
 	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "External task dispatched via MQTT")
 	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	// Completion arrives via MQTT result event (mqttResultHandler → taskEvents).
@@ -747,7 +771,10 @@ func (r *TaskReconciler) handleJobSucceeded(ctx context.Context, task *propeller
 	task.Status.FinishedAt = &now
 	r.extractAndStoreResult(ctx, task, job)
 	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionTrue, "Completed", "Task completed successfully")
-	return ctrl.Result{}, r.Status().Update(ctx, task)
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *TaskReconciler) handleJobFailed(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
@@ -756,7 +783,10 @@ func (r *TaskReconciler) handleJobFailed(ctx context.Context, task *propellerapi
 	task.Status.FinishedAt = &now
 	task.Status.Error = r.extractJobFailureMessage(job)
 	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "Failed", task.Status.Error)
-	return ctrl.Result{}, r.Status().Update(ctx, task)
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *TaskReconciler) extractJobFailureMessage(job *batchv1.Job) string {
@@ -772,7 +802,7 @@ func (r *TaskReconciler) extractAndStoreResult(ctx context.Context, task *propel
 	logger := log.FromContext(ctx)
 	result, err := ExtractResultFromJob(ctx, r.Client, job)
 	if err != nil {
-		logger.Error(err, "failed to extract result from job", "job", job.Name)
+		logger.V(1).Info("no result to extract from job (container image may not produce structured output)", "job", job.Name)
 		return
 	}
 	if result == nil {
@@ -833,6 +863,16 @@ func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionTyp
 		}
 	}
 	task.Status.Conditions = append(task.Status.Conditions, cond)
+}
+
+// statusUpdateError returns a requeue for conflict errors (stale informer cache)
+// and passes through all other errors so controller-runtime can log and back off.
+func statusUpdateError(err error) (ctrl.Result, error) {
+	if apierrors.IsConflict(err) {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	return ctrl.Result{}, err
 }
 
 // applyPendingMetrics checks pendingMetrics for a snapshot stored by the MQTT
@@ -980,12 +1020,12 @@ func (r *TaskReconciler) enqueueDependents(ctx context.Context, obj client.Objec
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
+func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub, sched scheduler.Scheduler) error {
 	r.pubsub = pubsub
 	r.sched = sched
-	r.domainID = domainID
+	r.tenantID = tenantID
 	r.channelID = channelID
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(baseTopicFmt, tenantID, channelID)
 	r.taskEvents = make(chan event.GenericEvent, 256)
 
 	// Register a field index on spec.dependsOn so enqueueDependents can use

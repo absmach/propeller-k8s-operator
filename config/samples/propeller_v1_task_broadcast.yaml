@@ -4,19 +4,15 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: wasm-addition
+  name: broadcast-task
 spec:
-  name: wasm-addition
+  name: broadcast-task
   functionName: main
   kind: standard
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   inputs:
     - "10"
     - "32"
-  env:
-    EXAMPLE_ENV: "example-value"
-  mode: infer
+  broadcast: true
   daemon: false
   priority: 50
-  propletSelector:
-    propletId: "k8s-proplet"

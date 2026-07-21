@@ -1,9 +1,4 @@
-# External Proplet sample — registers a proplet running outside the cluster (e.g. a
-# Docker container or edge device) with the operator via MQTT.
-#
-# For a full walkthrough including credential provisioning and task execution, see:
-# https://propeller.absmach.eu/docs/examples/kubernetes-operator
-apiVersion: propeller.propeller.abstractmachines.fr/v1
+apiVersion: propeller.propeller.absmach.eu/v1
 kind: Proplet
 metadata:
   labels:
@@ -18,10 +13,10 @@ spec:
       - wasm
       - wasmtime
   connectionConfig:
-    domainId: "<your-domain-id>"
+    tenantId: "<your-tenant-id>"
     channelId: "<your-channel-id>"
-    clientId: "<your-proplet-client-id>"
-    clientKey: "<your-proplet-client-key>"
-    mqttAddress: "tcp://localhost:1883"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
     mqttQos: 0
     mqttTimeout: 30s

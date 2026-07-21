@@ -4,19 +4,18 @@ metadata:
   labels:
     app.kubernetes.io/name: propeller-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: wasm-addition
+  name: dag-task-a
 spec:
-  name: wasm-addition
+  name: dag-task-a
   functionName: main
   kind: standard
   file: "AGFzbQEAAAABBwFgAn9/AX8DAgEABwgBBG1haW4AAAoJAQcAIAAgAWoL"
   inputs:
     - "10"
     - "32"
-  env:
-    EXAMPLE_ENV: "example-value"
+  workflowId: "my-dag-workflow"
   mode: infer
   daemon: false
   priority: 50
   propletSelector:
-    propletId: "k8s-proplet"
+    propletId: "external-proplet"

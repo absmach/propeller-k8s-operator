@@ -42,9 +42,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var superMQBaseTopic = "m/%s/c/%s"
+// baseTopicFmt is the root MQTT topic for a tenant/channel pair, matching the
+// manager's baseTopicFmt in the propeller repository.
+var baseTopicFmt = "m/%s/c/%s"
 
-const PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
+const PropletFinalizerName = "propeller.propeller.absmach.eu/finalizer"
 
 const aliveHistoryLimit = 10
 
@@ -78,9 +80,9 @@ type PropletReconciler struct {
 	pendingPropletMetrics sync.Map
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=proplets/finalizers,verbs=update
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -322,25 +324,25 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 		{Name: "PROPLET_MQTT_ADDRESS", Value: proplet.Spec.ConnectionConfig.MQTTAddress},
 		{Name: "PROPLET_MQTT_TIMEOUT", Value: proplet.Spec.ConnectionConfig.MQTTTimeout.Duration.String()},
 		{Name: "PROPLET_MQTT_QOS", Value: fmt.Sprintf("%d", proplet.Spec.ConnectionConfig.MQTTQoS)},
-		{Name: "PROPLET_DOMAIN_ID", Value: proplet.Spec.ConnectionConfig.DomainID},
+		{Name: "PROPLET_TENANT_ID", Value: proplet.Spec.ConnectionConfig.TenantID},
 		{Name: "PROPLET_CHANNEL_ID", Value: proplet.Spec.ConnectionConfig.ChannelID},
-		{Name: "PROPLET_CLIENT_ID", Value: proplet.Spec.ConnectionConfig.ClientID},
+		{Name: "PROPLET_ENTITY_ID", Value: proplet.Spec.ConnectionConfig.EntityID},
 	}
 	if proplet.Spec.K8s.PluginDir != "" {
 		envVars = append(envVars, corev1.EnvVar{Name: "PROPLET_PLUGIN_DIR", Value: proplet.Spec.K8s.PluginDir})
 	}
 
-	if proplet.Spec.ConnectionConfig.ClientKeySecretRef != nil {
+	if proplet.Spec.ConnectionConfig.APIKeySecretRef != nil {
 		envVars = append(envVars, corev1.EnvVar{
-			Name: "PROPLET_CLIENT_KEY",
+			Name: "PROPLET_API_KEY",
 			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: proplet.Spec.ConnectionConfig.ClientKeySecretRef,
+				SecretKeyRef: proplet.Spec.ConnectionConfig.APIKeySecretRef,
 			},
 		})
 	} else {
 		envVars = append(envVars, corev1.EnvVar{
-			Name:  "PROPLET_CLIENT_KEY",
-			Value: proplet.Spec.ConnectionConfig.ClientKey,
+			Name:  "PROPLET_API_KEY",
+			Value: proplet.Spec.ConnectionConfig.APIKey,
 		})
 	}
 
@@ -354,13 +356,10 @@ func (r *PropletReconciler) deploymentNeedsUpdate(current, desired *appsv1.Deplo
 	if len(current.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
 		cc := current.Spec.Template.Spec.Containers[0]
 		dc := desired.Spec.Template.Spec.Containers[0]
-		if cc.Image != dc.Image {
-			return true
-		}
-		if !reflect.DeepEqual(cc.Env, dc.Env) {
-			return true
-		}
-		if !reflect.DeepEqual(cc.Resources, dc.Resources) {
+		if cc.Image != dc.Image ||
+			cc.ImagePullPolicy != dc.ImagePullPolicy ||
+			!reflect.DeepEqual(cc.Env, dc.Env) ||
+			!reflect.DeepEqual(cc.Resources, dc.Resources) {
 			return true
 		}
 	}
@@ -616,7 +615,7 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 	}
 
 	for i := range proplets.Items {
-		if proplets.Items[i].Spec.ConnectionConfig.ClientID != propletClientID {
+		if proplets.Items[i].Spec.ConnectionConfig.EntityID != propletClientID {
 			continue
 		}
 		p := &proplets.Items[i]
@@ -702,7 +701,7 @@ func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg m
 		return err
 	}
 	for i := range proplets.Items {
-		if proplets.Items[i].Spec.ConnectionConfig.ClientID != propletClientID {
+		if proplets.Items[i].Spec.ConnectionConfig.EntityID != propletClientID {
 			continue
 		}
 		p := &proplets.Items[i]
@@ -718,12 +717,12 @@ func (r *PropletReconciler) mqttPropletMetricsHandler(ctx context.Context, msg m
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PropletReconciler) SetupWithManager(
-	domainID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
+	tenantID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
 ) error {
 	r.livelinessInterval = livelinessInterval
 	r.lastSeenThreshold = lastSeenThreshold
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(baseTopicFmt, tenantID, channelID)
 	r.propletEvents = make(chan event.GenericEvent, 256)
 
 	// Subscribe to liveness and proplet-level metrics topics. Task result topics

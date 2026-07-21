@@ -1,0 +1,26 @@
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: FederatedJob
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: sample-fl-job
+spec:
+  experimentId: "fl-experiment-001"
+  modelRef: "docker.io/myorg/initial-model:latest"
+  taskWasmImage: "docker.io/myorg/fl-training-task:latest"
+  participants:
+    - propletId: "k8s-proplet"
+  hyperparams:
+    learning_rate: 0.01
+    batch_size: 32
+    epochs: 5
+  kOfN: 1
+  timeoutSeconds: 300
+  rounds:
+    total: 3
+    strategy: "sequential"
+  aggregator:
+    algorithm: "fedavg"
+    config:
+      compression: "none"

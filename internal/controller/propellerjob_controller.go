@@ -38,15 +38,15 @@ const (
 
 	// labelJobName tags every Task created by a PropellerJob so they can be
 	// listed efficiently without a field indexer.
-	labelJobName = "propeller.propeller.abstractmachines.fr/job"
+	labelJobName = "propeller.propeller.absmach.eu/job"
 
 	// annotationSpecIndex records the task's position in PropellerJobSpec.Tasks
 	// (0-based).  Used by sequential mode to determine which task to create next.
-	annotationSpecIndex = "propeller.propeller.abstractmachines.fr/spec-index"
+	annotationSpecIndex = "propeller.propeller.absmach.eu/spec-index"
 
 	// annotationSpecName records the TaskSpec.Name value so DependsOn cross-
 	// references can be resolved to Kubernetes resource names.
-	annotationSpecName = "propeller.propeller.abstractmachines.fr/spec-name"
+	annotationSpecName = "propeller.propeller.absmach.eu/spec-name"
 )
 
 // PropellerJobReconciler reconciles a PropellerJob object.
@@ -55,10 +55,10 @@ type PropellerJobReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=propellerjobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=propellerjobs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=propellerjobs/finalizers,verbs=update
-// +kubebuilder:rbac:groups=propeller.propeller.abstractmachines.fr,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=propellerjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=propellerjobs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=propellerjobs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 
 func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -75,7 +75,7 @@ func (r *PropellerJobReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		job.Status.UpdatedAt = &now
 		job.Status.TaskCount = len(job.Spec.Tasks) + len(job.Spec.TaskRefs)
 		if err := r.Status().Update(ctx, job); err != nil {
-			return ctrl.Result{}, err
+			return statusUpdateError(err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func (r *PropellerJobReconciler) handlePending(ctx context.Context, job *propell
 	job.Status.StartTime = &now
 	job.Status.UpdatedAt = &now
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{}, err
+		return statusUpdateError(err)
 	}
 
 	return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
@@ -196,7 +196,7 @@ func (r *PropellerJobReconciler) handleRunning(ctx context.Context, job *propell
 	}
 
 	if err := r.Status().Update(ctx, job); err != nil {
-		return ctrl.Result{}, err
+		return statusUpdateError(err)
 	}
 
 	if job.Status.Phase == propellerapiv1.JobPhaseRunning {

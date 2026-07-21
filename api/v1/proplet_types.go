@@ -106,20 +106,20 @@ type K8sPropletSpec struct {
 type ConnectionConfig struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	DomainID string `json:"domainId"`
+	TenantID string `json:"tenantId"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	ChannelID string `json:"channelId"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	ClientID string `json:"clientId"`
-	// ClientKey is the MQTT client secret. Exactly one of ClientKey or
-	// ClientKeySecretRef must be set.
-	ClientKey string `json:"clientKey,omitempty"`
-	// ClientKeySecretRef references a Kubernetes Secret whose key holds the
-	// MQTT client secret. Exactly one of ClientKey or ClientKeySecretRef must
+	EntityID string `json:"entityId"`
+	// APIKey is the MQTT API key. Exactly one of APIKey or
+	// APIKeySecretRef must be set.
+	APIKey string `json:"apiKey,omitempty"`
+	// APIKeySecretRef references a Kubernetes Secret whose key holds the
+	// MQTT API key. Exactly one of APIKey or APIKeySecretRef must
 	// be set.
-	ClientKeySecretRef *corev1.SecretKeySelector `json:"clientKeySecretRef,omitempty"`
+	APIKeySecretRef *corev1.SecretKeySelector `json:"apiKeySecretRef,omitempty"`
 	// +kubebuilder:validation:Required
 	MQTTAddress string `json:"mqttAddress"`
 	// +kubebuilder:default="30s"

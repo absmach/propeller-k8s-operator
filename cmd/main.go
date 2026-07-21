@@ -17,8 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"flag"
+	"math/big"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,6 +56,63 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+func ensureCerts(certDir, certName, certKey string) error {
+	certFile := filepath.Join(certDir, certName)
+	keyFile := filepath.Join(certDir, certKey)
+	if _, err := os.Stat(certFile); err == nil {
+		if _, err := os.Stat(keyFile); err == nil {
+			return nil
+		}
+	}
+
+	setupLog.Info("Generating self-signed webhook TLS certificates", "dir", certDir)
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "propeller-webhook"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		return err
+	}
+
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = certOut.Close() }()
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		return err
+	}
+
+	keyOut, err := os.Create(keyFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = keyOut.Close() }()
+	block := pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	if err := pem.Encode(keyOut, &block); err != nil {
+		return err
+	}
+
+	setupLog.Info("Self-signed webhook TLS certificates generated", "cert", certFile, "key", keyFile)
+	return nil
+}
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -72,13 +135,13 @@ func main() {
 	var mqttAddress string
 	var mqttQoS uint
 	var mqttTimeout time.Duration
-	var domainID string
+	var tenantID string
 	var channelID string
-	var clientID string
-	var clientKey string
+	var entityID string
+	var apiKey string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8181", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -100,10 +163,10 @@ func main() {
 	flag.StringVar(&mqttAddress, "mqtt-address", "", "The address of the MQTT broker.")
 	flag.UintVar(&mqttQoS, "mqtt-qos", 0, "The QoS level of the MQTT messages.")
 	flag.DurationVar(&mqttTimeout, "mqtt-timeout", 30*time.Second, "The timeout for MQTT operations.")
-	flag.StringVar(&domainID, "domain-id", "", "The domain ID.")
+	flag.StringVar(&tenantID, "tenant-id", "", "The tenant ID.")
 	flag.StringVar(&channelID, "channel-id", "", "The channel ID.")
-	flag.StringVar(&clientID, "client-id", "", "The client ID.")
-	flag.StringVar(&clientKey, "client-key", "", "The client key.")
+	flag.StringVar(&entityID, "entity-id", "", "The entity ID.")
+	flag.StringVar(&apiKey, "api-key", "", "The API key.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -152,7 +215,17 @@ func main() {
 		})
 	}
 
+	webhookCertDir := webhookCertPath
+	if webhookCertDir == "" {
+		webhookCertDir = filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
+	}
+	if err := ensureCerts(webhookCertDir, webhookCertName, webhookCertKey); err != nil {
+		setupLog.Error(err, "Failed to ensure webhook certificates")
+		os.Exit(1)
+	}
+
 	webhookServer := webhook.NewServer(webhook.Options{
+		CertDir: webhookCertDir,
 		TLSOpts: webhookTLSOpts,
 	})
 
@@ -207,7 +280,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "fa27fa49.propeller.abstractmachines.fr",
+		LeaderElectionID:       "fa27fa49.propeller.absmach.eu",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -228,7 +301,7 @@ func main() {
 	var mqttPubSub mqtt.PubSub
 	if mqttAddress != "" {
 		mqttPubSub, err = mqtt.NewPubSub(
-			mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+			mqttAddress, byte(mqttQoS), "propeller-controller", entityID, apiKey, tenantID, channelID, mqttTimeout,
 		)
 		if err != nil {
 			setupLog.Error(err, "failed to initialize mqtt pubsub")
@@ -249,7 +322,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Namespace: watchNamespace,
-	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
+	}).SetupWithManager(tenantID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
 		os.Exit(1)
 	}
@@ -257,7 +330,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Namespace: watchNamespace,
-	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
+	}).SetupWithManager(tenantID, channelID, mgr, mqttPubSub, scheduler.NewRoundRobin()); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}

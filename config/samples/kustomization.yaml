@@ -1,8 +1,14 @@
-## Append samples of your project ##
 resources:
 - propeller_v1_proplet_external.yaml
 - propeller_v1_proplet.yaml
 - propeller_v1_task.yaml
 - propeller_v1_task_with_image.yaml
+- propeller_v1_task_k8s_job.yaml
+- propeller_v1_task_recurring.yaml
+- propeller_v1_task_broadcast.yaml
+- propeller_v1_task_monitoring.yaml
+- propeller_v1_task_dag_a.yaml
+- propeller_v1_task_dag.yaml
+- propeller_v1_propellerjob.yaml
+- propeller_v1_federatedjob.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
-

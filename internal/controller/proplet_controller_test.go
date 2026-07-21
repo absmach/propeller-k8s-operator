@@ -57,9 +57,9 @@ var _ = Describe("Proplet Controller", func() {
 							Image: "test-image",
 						},
 						ConnectionConfig: propellerv1.ConnectionConfig{
-							ClientID:    "test-client",
-							ClientKey:   "test-key",
-							DomainID:    "test-domain",
+							EntityID:    "test-entity",
+							APIKey:      "test-key",
+							TenantID:    "test-tenant",
 							ChannelID:   "test-channel",
 							MQTTAddress: "tcp://localhost:1883",
 						},

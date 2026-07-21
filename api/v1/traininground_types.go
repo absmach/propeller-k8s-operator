@@ -48,8 +48,9 @@ type TrainingRound struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   TrainingRoundSpec   `json:"spec"`
-	Status TrainingRoundStatus `json:"status"`
+	Spec TrainingRoundSpec `json:"spec"`
+	// +optional
+	Status TrainingRoundStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
