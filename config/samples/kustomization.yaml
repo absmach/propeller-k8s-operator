@@ -3,7 +3,6 @@ resources:
 - propeller_v1_proplet.yaml
 - propeller_v1_task.yaml
 - propeller_v1_task_with_image.yaml
-- propeller_v1_task_k8s_job.yaml
 - propeller_v1_task_recurring.yaml
 - propeller_v1_task_broadcast.yaml
 - propeller_v1_task_monitoring.yaml

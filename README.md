@@ -32,7 +32,7 @@ Two types:
 
 ### 2. `Task` (canonical task API)
 
-Smallest unit of work, representing a single task to be executed by a proplet.
+Smallest unit of work, representing a single task to be executed by a proplet. Tasks always dispatch via MQTT to the proplet's own Wasmtime runtime, regardless of whether the target proplet is `k8s` or `external`. The WASM module comes from either `file` (inline base64 bytes) or `imageUrl` (an OCI registry reference, fetched by the proplet through the registry proxy) — `imageUrl` is a WASM module reference, not a container image; the operator never runs it as one.
 
 ### 3. `PropellerJob` (batch)
 
@@ -47,7 +47,7 @@ Groups multiple tasks into a managed batch. Supports `parallel`, `sequential`, o
 | Controller                | Owns          | Responsibility                                                                        |
 | ------------------------- | ------------- | ------------------------------------------------------------------------------------- |
 | `PropletReconciler`       | Proplet       | Creates/reconciles k8s Deployments; monitors external proplets via MQTT               |
-| `TaskReconciler`          | Task          | Schedules WASM on selected proplet; K8s Job for container images, MQTT for WASM files |
+| `TaskReconciler`          | Task          | Schedules WASM on selected proplet; always dispatches via MQTT                        |
 | `PropellerJobReconciler`  | PropellerJob  | Creates child Tasks and aggregates outcomes                                           |
 | `FederatedJobReconciler`  | FederatedJob  | Creates TrainingRound resources sequentially                                          |
 | `TrainingRoundReconciler` | TrainingRound | Creates per-participant Tasks; aggregates once k-of-n complete                        |
@@ -98,7 +98,6 @@ All samples are in `config/samples/`. Edit them with your MQTT credentials befor
 | ----------------------------------- | --------- | ---------------------------------------------------------------- |
 | `propeller_v1_task.yaml`            | MQTT      | WASM file dispatched via MQTT to target proplet.                 |
 | `propeller_v1_task_with_image.yaml` | MQTT      | WASM OCI image reference dispatched via MQTT.                    |
-| `propeller_v1_task_k8s_job.yaml`    | K8s Job   | Container image run as a K8s Job on k8s proplet.                 |
 | `propeller_v1_task_broadcast.yaml`  | Broadcast | WASM file sent to all proplets simultaneously.                   |
 | `propeller_v1_task_recurring.yaml`  | MQTT      | Cron-scheduled recurring task with `isRecurring` and `schedule`. |
 | `propeller_v1_task_monitoring.yaml` | MQTT      | Task with inline monitoring profile for metrics collection.      |
@@ -126,18 +125,7 @@ kubectl get task wasm-addition -w
 # Result: 42 (10 + 32)
 ```
 
-### 2. Container Image Task (K8s Job on k8s Proplet)
-
-Creates a K8s Job from a container image on a k8s-backed proplet.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_task_k8s_job.yaml
-kubectl get jobs -w
-kubectl logs job/k8s-container-task-job
-# Expected: "hello from propeller k8s job"
-```
-
-### 3. Broadcast Task
+### 2. Broadcast Task
 
 Sends a WASM file to all proplets simultaneously via MQTT.
 
@@ -146,7 +134,7 @@ kubectl apply -f config/samples/propeller_v1_task_broadcast.yaml
 kubectl get task broadcast-task -w
 ```
 
-### 4. Recurring Cron Task
+### 3. Recurring Cron Task
 
 Task that runs on a cron schedule and re-queues after completion.
 
@@ -155,7 +143,7 @@ kubectl apply -f config/samples/propeller_v1_task_recurring.yaml
 kubectl get task recurring-task -o jsonpath='{.status.nextRun}'
 ```
 
-### 5. Monitoring Profile Task
+### 4. Monitoring Profile Task
 
 Task with metrics collection enabled during execution.
 
@@ -164,7 +152,7 @@ kubectl apply -f config/samples/propeller_v1_task_monitoring.yaml
 kubectl get task monitored-task -w
 ```
 
-### 6. DAG Dependency Tasks
+### 5. DAG Dependency Tasks
 
 Tasks with dependency gates. Task B only runs after Task A completes successfully.
 
@@ -175,7 +163,7 @@ kubectl apply -f config/samples/propeller_v1_task_dag.yaml
 kubectl get task dag-task-a,dag-task-b -w
 ```
 
-### 7. PropellerJob (Parallel Batch)
+### 6. PropellerJob (Parallel Batch)
 
 Creates multiple child Tasks and tracks them as a batch.
 
@@ -185,7 +173,7 @@ kubectl get pjob sample-propeller-job -w
 kubectl get tasks -l jobId
 ```
 
-### 8. FederatedJob (Federated Learning)
+### 7. FederatedJob (Federated Learning)
 
 Multi-round FL experiment with k-of-n aggregation.
 

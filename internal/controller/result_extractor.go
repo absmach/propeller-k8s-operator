@@ -1,92 +1,9 @@
 package controller
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
-
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-var ErrNoResult = errors.New("no result found")
-
-func ExtractResultFromJob(ctx context.Context, c client.Client, job *batchv1.Job) (map[string]any, error) {
-	startTime := time.Now()
-	_ = startTime
-
-	if resultJSON, ok := job.Annotations["propeller.propeller.absmach.eu/result"]; ok {
-		var result map[string]any
-		if err := json.Unmarshal([]byte(resultJSON), &result); err == nil {
-			return result, nil
-		}
-	}
-
-	podList := &corev1.PodList{}
-	labels := job.Spec.Selector.MatchLabels
-	if err := c.List(ctx, podList, client.MatchingLabels(labels), client.InNamespace(job.Namespace)); err != nil {
-		return nil, fmt.Errorf("failed to list pods: %w", err)
-	}
-
-	var succeededPod *corev1.Pod
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-		if pod.Status.Phase == corev1.PodSucceeded {
-			succeededPod = &podList.Items[i]
-
-			break
-		}
-	}
-
-	if succeededPod == nil {
-		return nil, fmt.Errorf("%w: no succeeded pod found", ErrNoResult)
-	}
-
-	if len(succeededPod.Status.ContainerStatuses) > 0 {
-		cs := succeededPod.Status.ContainerStatuses[0]
-		if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
-			var result map[string]any
-			if err := json.Unmarshal([]byte(cs.State.Terminated.Message), &result); err == nil {
-				return result, nil
-			}
-		}
-	}
-
-	configMapName := job.Name + "-result"
-	configMap := &corev1.ConfigMap{}
-	if err := c.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: job.Namespace}, configMap); err == nil {
-		if resultJSON, ok := configMap.Data["result"]; ok {
-			var result map[string]any
-			if err := json.Unmarshal([]byte(resultJSON), &result); err == nil {
-				return result, nil
-			}
-		}
-	}
-
-	secretName := job.Name + "-result"
-	secret := &corev1.Secret{}
-	if err := c.Get(ctx, types.NamespacedName{Name: secretName, Namespace: job.Namespace}, secret); err == nil {
-		if resultData, ok := secret.Data["result"]; ok {
-			var result map[string]any
-			if err := json.Unmarshal(resultData, &result); err == nil {
-				return result, nil
-			}
-		}
-	}
-
-	if resultJSON, ok := succeededPod.Annotations["propeller.propeller.absmach.eu/result"]; ok {
-		var result map[string]any
-		if err := json.Unmarshal([]byte(resultJSON), &result); err == nil {
-			return result, nil
-		}
-	}
-
-	return nil, fmt.Errorf("%w: tried all extraction methods", ErrNoResult)
-}
 
 func ExtractFLUpdateFromResult(result map[string]any) (UpdateEnvelope, error) {
 	if env, ok := result["update_envelope"].(map[string]any); ok {
