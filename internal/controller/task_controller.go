@@ -285,11 +285,6 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		return ctrl.Result{}, err
 	}
 
-	// WASM file tasks always go via MQTT, since the proplet's Wasmtime
-	// runtime handles execution regardless of backend type.
-	if len(task.Spec.File) > 0 {
-		return r.startExternalTask(ctx, task, propletID)
-	}
 	if backend == propellerapiv1.K8sProplet {
 		return r.startK8sJob(ctx, task, propletID)
 	}
