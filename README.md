@@ -32,13 +32,7 @@ Two types:
 
 ### 2. `Task` (canonical task API)
 
-Three execution modes:
-
-| Mode          | Backend                 | When used                                                                             |
-| ------------- | ----------------------- | ------------------------------------------------------------------------------------- |
-| **MQTT**      | k8s or external proplet | Task has `file` (base64 WASM). Dispatched via MQTT to the proplet's Wasmtime runtime. |
-| **K8s Job**   | k8s proplet only        | Task has `imageUrl` (container image). Creates a K8s Job.                             |
-| **Broadcast** | All proplets            | `broadcast: true`. Sends to all proplets via MQTT.                                    |
+Smallest unit of work, representing a single task to be executed by a proplet.
 
 ### 3. `PropellerJob` (batch)
 
