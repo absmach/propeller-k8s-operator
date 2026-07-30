@@ -604,8 +604,13 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 func (r *PropletReconciler) updatePropletStatus(ctx context.Context, proplet *propellerv1.Proplet) error {
 	logger := logf.FromContext(ctx).WithValues("proplet", proplet.Name)
 
+	oldStatus := proplet.Status.DeepCopy()
+
 	const maxRetries = 3
 	for i := range maxRetries {
+		if reflect.DeepEqual(&oldStatus, &proplet.Status) {
+			return nil
+		}
 		if err := r.Status().Update(ctx, proplet); err != nil {
 			if apierrors.IsConflict(err) && i < maxRetries-1 {
 				logger.Info("status update conflict, retrying", "attempt", i+1)
@@ -842,10 +847,15 @@ func (r *PropletReconciler) mqttDiscoveryHandler(ctx context.Context, msg map[st
 		}
 	}
 
+	ns := r.Namespace
+	if ns == "" {
+		ns = "default"
+	}
+
 	proplet := &propellerv1.Proplet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "discovered-" + propletID,
-			Namespace: r.Namespace,
+			Namespace: ns,
 		},
 		Spec: propellerv1.PropletSpec{
 			Type: propellerv1.ExternalProplet,
