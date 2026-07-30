@@ -1,0 +1,34 @@
+# Confirmed constraint: the proplet rejects spec.encrypted: true combined
+# with spec.file outright ("image_url is required for encrypted
+# workloads") — encrypted workloads must use spec.imageUrl, not an inline
+# file. This sample's imageUrl is a placeholder, but applying it as-is is
+# still informative: the proplet checks for TEE hardware before it even
+# tries to fetch the image, so on a host without TDX/SEV this fails fast
+# and cleanly with status.phase: failed, status.error: "TEE runtime not
+# available" — no hang, no need to chase a fake registry. To actually run
+# the example, publish the (encrypted) addition module to a real OCI
+# registry, set imageUrl below, and set spec.k8s.env.kbsUri +
+# spec.k8s.env.aaConfigPath on the Proplet (see
+# propeller_v1_proplet_full.yaml) on a host with real TEE hardware. On
+# real TEE hardware, the proplet proceeds past the check above to fetch
+# the image, which then needs the registry proxy running — see
+# propeller_proxy_deployment.yaml.
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: Task
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: tee-example
+spec:
+  name: tee-example
+  functionName: add
+  kind: standard
+  imageUrl: "your-registry.example.com/encrypted-addition-wasm:latest"
+  inputs:
+    - "10"
+    - "20"
+  encrypted: true
+  daemon: false
+  propletSelector:
+    propletId: "k8s-proplet-full"

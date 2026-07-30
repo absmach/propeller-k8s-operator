@@ -95,8 +95,11 @@ type PropletEnvConfig struct {
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 	// MetricsEnabled sets PROPLET_METRICS_ENABLED (default true).
 	MetricsEnabled *bool `json:"metricsEnabled,omitempty"`
-	// ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME (path to wasmtime binary).
-	ExternalWasmRuntime string `json:"externalWasmRuntime,omitempty"`
+	// ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME (path to an
+	// external wasmtime binary). A pointer so an explicit empty string
+	// (forcing the proplet's built-in runtime, distinct from an external
+	// wasmtime subprocess) can be distinguished from the field being unset.
+	ExternalWasmRuntime *string `json:"externalWasmRuntime,omitempty"`
 	// HalEnabled sets PROPLET_HAL_ENABLED.
 	HalEnabled *bool `json:"halEnabled,omitempty"`
 	// HttpEnabled sets PROPLET_HTTP_ENABLED.

@@ -1,0 +1,32 @@
+# WASI-NN needs a proplet build with the neural-network host functions
+# compiled in, so it's a distinct k8s.image rather than an env flag on the
+# standard proplet image. Confirmed pullable and connects/authenticates
+# over MQTT like any other k8s proplet. There is no Task sample alongside
+# this one: building the wasi-nn example module requires a Rust toolchain
+# with the `wasi_ephemeral_nn` import available to wasm-component-ld,
+# which a stock `cargo build --target wasm32-wasip2 --release` does not
+# provide — see propeller/examples/wasi-nn.
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: wasi-nn-proplet
+spec:
+  type: k8s
+  k8s:
+    image: "ghcr.io/absmach/propeller/proplet-wasi-nn:latest"
+    logLevel: info
+    replicas: 1
+  connectionConfig:
+    tenantId: "<your-tenant-id>"
+    channelId: "<your-channel-id>"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
+    mqttQos: 0
+    mqttTimeout: 30s
+  resources:
+    cpu: "50m"
+    memory: "128Mi"

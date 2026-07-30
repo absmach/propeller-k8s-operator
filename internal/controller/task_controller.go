@@ -28,11 +28,8 @@ import (
 	"github.com/absmach/propeller/internal/dag"
 	"github.com/absmach/propeller/internal/mqtt"
 	"github.com/absmach/propeller/internal/scheduler"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -97,10 +94,6 @@ type TaskReconciler struct {
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=tasks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets,verbs=get;list
 
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -280,14 +273,11 @@ func (r *TaskReconciler) handlePending(ctx context.Context, task *propellerapiv1
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	backend, err := r.determineBackend(ctx, task.Namespace, propletID)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if backend == propellerapiv1.K8sProplet {
-		return r.startK8sJob(ctx, task, propletID)
-	}
+	// Tasks always dispatch via MQTT to the proplet's own runtime, whether
+	// the backend is k8s or external: the proplet resolves spec.file (inline
+	// WASM bytes) or spec.imageUrl (OCI reference, fetched via the registry
+	// proxy) itself, mirroring propeller's manager. imageUrl is a WASM module
+	// reference, not a container image — the operator never runs it directly.
 	return r.startExternalTask(ctx, task, propletID)
 }
 
@@ -445,27 +435,10 @@ func (r *TaskReconciler) selectProplet(ctx context.Context, task *propellerapiv1
 	return selected.Name, nil
 }
 
-func (r *TaskReconciler) handleRunning(ctx context.Context, task *propellerapiv1.Task) (ctrl.Result, error) {
-	// K8s-Job-backed tasks: Owns(&batchv1.Job{}) drives change-triggered reconcile.
-	// A safety requeue is kept at a long interval to catch edge cases.
-	jobName := task.Name + "-job"
-	job := &batchv1.Job{}
-	if err := r.Get(ctx, client.ObjectKey{Name: jobName, Namespace: task.Namespace}, job); err != nil {
-		if apierrors.IsNotFound(err) {
-			// External task: completion arrives via MQTT result event (no polling).
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-
-	if job.Status.Succeeded > 0 {
-		return r.handleJobSucceeded(ctx, task, job)
-	}
-	if job.Status.Failed > 0 {
-		return r.handleJobFailed(ctx, task, job)
-	}
-
-	// Safety requeue — Owns() will normally drive this earlier.
+func (r *TaskReconciler) handleRunning(_ context.Context, _ *propellerapiv1.Task) (ctrl.Result, error) {
+	// Completion arrives via MQTT result event (no polling); the taskEvents
+	// channel drives reconcile as soon as a result lands. Safety requeue in
+	// case an MQTT event is ever missed.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -527,121 +500,6 @@ func (r *TaskReconciler) transitionToSkipped(ctx context.Context, task *propelle
 	task.Status.FinishedAt = &now
 	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "Skipped", reason)
 	return ctrl.Result{}, r.Status().Update(ctx, task)
-}
-
-func (r *TaskReconciler) determineBackend(ctx context.Context, namespace, propletID string) (propellerapiv1.PropletKind, error) {
-	if propletID == "" {
-		return propellerapiv1.ExternalProplet, nil
-	}
-
-	proplet := &propellerapiv1.Proplet{}
-	if err := r.Get(ctx, client.ObjectKey{Name: propletID, Namespace: namespace}, proplet); err != nil {
-		return propellerapiv1.ExternalProplet, client.IgnoreNotFound(err)
-	}
-	return proplet.Spec.Type, nil
-}
-
-func (r *TaskReconciler) startK8sJob(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	image := task.Spec.ImageURL
-	if image == "" {
-		now := metav1.Now()
-		task.Status.Phase = propellerapiv1.TaskFailedPhase
-		task.Status.FinishedAt = &now
-		task.Status.Error = "no container image specified: set spec.imageUrl for k8s-backed tasks"
-		r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "InvalidSpec", task.Status.Error)
-		return ctrl.Result{}, r.Status().Update(ctx, task)
-	}
-
-	configMapName := task.Name + "-config"
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: task.Namespace,
-		},
-		Data: task.Spec.Env,
-	}
-	if len(task.Spec.File) > 0 {
-		if configMap.Data == nil {
-			configMap.Data = map[string]string{}
-		}
-		configMap.Data["wasm_file_provided"] = "true"
-	}
-	// SetControllerReference resolves GVK from the scheme — task.TypeMeta is
-	// empty for objects returned by client.Get so manual OwnerReference
-	// construction would produce invalid (empty APIVersion/Kind) entries.
-	if err := controllerutil.SetControllerReference(task, configMap, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.Create(ctx, configMap); client.IgnoreAlreadyExists(err) != nil {
-		return ctrl.Result{}, err
-	}
-
-	resReqs, err := r.buildResourceRequirements(task.Spec.ResourceRequirements)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("invalid resource requirements: %w", err)
-	}
-
-	restartPolicy := corev1.RestartPolicyOnFailure
-	if task.Spec.RestartPolicy != "" {
-		restartPolicy = task.Spec.RestartPolicy
-	} else if task.Spec.Daemon {
-		restartPolicy = corev1.RestartPolicyAlways
-	}
-
-	jobName := task.Name + "-job"
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: task.Namespace,
-		},
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy: restartPolicy,
-					Containers: []corev1.Container{
-						{
-							Name:  "task",
-							Image: image,
-							Args:  task.Spec.CLIArgs,
-							EnvFrom: []corev1.EnvFromSource{
-								{
-									ConfigMapRef: &corev1.ConfigMapEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
-									},
-								},
-							},
-							Env: []corev1.EnvVar{
-								{Name: "PROPLET_ID", Value: propletID},
-								{Name: "TASK_ID", Value: string(task.UID)},
-							},
-							Resources: resReqs,
-						},
-					},
-				},
-			},
-		},
-	}
-	if err := controllerutil.SetControllerReference(task, job, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := r.Create(ctx, job); client.IgnoreAlreadyExists(err) != nil {
-		logger.Error(err, "failed to create job", "job", jobName)
-		return ctrl.Result{}, err
-	}
-
-	now := metav1.Now()
-	task.Status.Phase = propellerapiv1.TaskRunningPhase
-	task.Status.AssignedProplet = propletID
-	task.Status.StartedAt = &now
-	r.updateCondition(task, propellerapiv1.StartedType, metav1.ConditionTrue, "Running", "Task is running via K8s Job")
-	if err := r.Status().Update(ctx, task); err != nil {
-		return statusUpdateError(err)
-	}
-
-	return ctrl.Result{}, nil
 }
 
 func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellerapiv1.Task, propletID string) (ctrl.Result, error) {
@@ -767,85 +625,6 @@ func (r *TaskReconciler) startExternalTask(ctx context.Context, task *propellera
 	// Completion arrives via MQTT result event (mqttResultHandler → taskEvents).
 	// No polling requeue needed.
 	return ctrl.Result{}, nil
-}
-
-func (r *TaskReconciler) handleJobSucceeded(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
-	now := metav1.Now()
-	task.Status.Phase = propellerapiv1.TaskCompletedPhase
-	task.Status.FinishedAt = &now
-	r.extractAndStoreResult(ctx, task, job)
-	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionTrue, "Completed", "Task completed successfully")
-	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *TaskReconciler) handleJobFailed(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) (ctrl.Result, error) {
-	now := metav1.Now()
-	task.Status.Phase = propellerapiv1.TaskFailedPhase
-	task.Status.FinishedAt = &now
-	task.Status.Error = r.extractJobFailureMessage(job)
-	r.updateCondition(task, propellerapiv1.CompletedType, metav1.ConditionFalse, "Failed", task.Status.Error)
-	if err := r.Status().Update(ctx, task); err != nil {
-		return ctrl.Result{RequeueAfter: time.Second}, nil
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *TaskReconciler) extractJobFailureMessage(job *batchv1.Job) string {
-	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobFailed && c.Message != "" {
-			return c.Message
-		}
-	}
-	return "job failed"
-}
-
-func (r *TaskReconciler) extractAndStoreResult(ctx context.Context, task *propellerapiv1.Task, job *batchv1.Job) {
-	logger := log.FromContext(ctx)
-	result, err := ExtractResultFromJob(ctx, r.Client, job)
-	if err != nil {
-		logger.V(1).Info("no result to extract from job (container image may not produce structured output)", "job", job.Name)
-		return
-	}
-	if result == nil {
-		return
-	}
-	raw, err := json.Marshal(result)
-	if err == nil {
-		task.Status.Results = &apiextensionsv1.JSON{Raw: raw}
-	}
-}
-
-// buildResourceRequirements converts PropletResources to a corev1.ResourceRequirements.
-// Returns an error for invalid quantity strings rather than panicking.
-func (r *TaskReconciler) buildResourceRequirements(req *propellerapiv1.PropletResources) (corev1.ResourceRequirements, error) {
-	if req == nil {
-		return corev1.ResourceRequirements{}, nil
-	}
-	reqs := corev1.ResourceRequirements{}
-	if req.CPU != "" {
-		q, err := resource.ParseQuantity(req.CPU)
-		if err != nil {
-			return corev1.ResourceRequirements{}, fmt.Errorf("invalid CPU quantity %q: %w", req.CPU, err)
-		}
-		reqs.Requests = corev1.ResourceList{corev1.ResourceCPU: q}
-		reqs.Limits = corev1.ResourceList{corev1.ResourceCPU: q}
-	}
-	if req.Memory != "" {
-		q, err := resource.ParseQuantity(req.Memory)
-		if err != nil {
-			return corev1.ResourceRequirements{}, fmt.Errorf("invalid Memory quantity %q: %w", req.Memory, err)
-		}
-		if reqs.Requests == nil {
-			reqs.Requests = corev1.ResourceList{}
-			reqs.Limits = corev1.ResourceList{}
-		}
-		reqs.Requests[corev1.ResourceMemory] = q
-		reqs.Limits[corev1.ResourceMemory] = q
-	}
-	return reqs, nil
 }
 
 func (r *TaskReconciler) updateCondition(task *propellerapiv1.Task, conditionType propellerapiv1.TaskConditionType, status metav1.ConditionStatus, reason, message string) {
@@ -983,10 +762,16 @@ func (r *TaskReconciler) enqueueTaskByUID(ctx context.Context, taskUID string, u
 		select {
 		case r.taskEvents <- event.GenericEvent{Object: t}:
 		default:
-			// Channel full; periodic reconcile will drain the pending update.
+			// Channel full; the periodic safety RequeueAfter in handleRunning
+			// will drain the pending update on its next tick.
+			log.FromContext(ctx).Info("taskEvents channel full, relying on safety requeue", "taskUID", taskUID)
 		}
 		return nil
 	}
+	// No matching Task found (e.g. deleted, or informer cache not yet synced
+	// for a just-created object). The update is dropped: without a match we
+	// have no object to key a reconcile off of.
+	log.FromContext(ctx).Info("no Task found for MQTT result, dropping update", "taskUID", taskUID)
 	return nil
 }
 
@@ -1136,7 +921,6 @@ func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.M
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerapiv1.Task{}).
-		Owns(&batchv1.Job{}).
 		Watches(
 			&propellerapiv1.Task{},
 			handler.EnqueueRequestsFromMapFunc(r.enqueueDependents),

@@ -1,6 +1,6 @@
 # Propeller K8s Operator
 
-The Propeller K8s Operator is a Kubernetes operator designed to manage and schedule **WebAssembly (WASM) tasks** on a hybrid fleet of devices, which can be either Kubernetes pods or external devices. It introduces:
+The Propeller K8s Operator is a Kubernetes operator designed to manage and schedule **WebAssembly (WASM) tasks** on a hybrid fleet of devices, which can be either Kubernetes pods or external devices using [propeller](https://github.com/absmach/propeller). It introduces:
 
 - `Proplet` as the hybrid worker primitive (k8s or external), and
 - `Task` as the canonical task API, plus supporting CRDs for scheduling and federated learning.
@@ -27,12 +27,12 @@ The operator enables users to:
 
 Two types:
 
-- **`k8s`**: Operator creates a `Deployment` running the proplet image. Tasks with container images run as K8s Jobs; tasks with WASM files are dispatched via MQTT to the running proplet.
+- **`k8s`**: Operator creates a `Deployment` running the proplet image. Tasks are dispatched via MQTT to the running proplet, same as an external proplet.
 - **`external`**: External device (IoT, Docker container, etc.) connecting via MQTT. No K8s resources created.
 
 ### 2. `Task` (canonical task API)
 
-Smallest unit of work, representing a single task to be executed by a proplet.
+Smallest unit of work, representing a single task to be executed by a proplet. Tasks always dispatch via MQTT to the proplet's own Wasmtime runtime, regardless of whether the target proplet is `k8s` or `external`. The WASM module comes from either `file` (inline base64 bytes) or `imageUrl` (an OCI registry reference, fetched by the proplet through the registry proxy) — `imageUrl` is a WASM module reference, not a container image; the operator never runs it as one.
 
 ### 3. `PropellerJob` (batch)
 
@@ -44,13 +44,13 @@ Groups multiple tasks into a managed batch. Supports `parallel`, `sequential`, o
 
 ## Architecture
 
-| Controller                | Owns          | Responsibility                                                                        |
-| ------------------------- | ------------- | ------------------------------------------------------------------------------------- |
-| `PropletReconciler`       | Proplet       | Creates/reconciles k8s Deployments; monitors external proplets via MQTT               |
-| `TaskReconciler`          | Task          | Schedules WASM on selected proplet; K8s Job for container images, MQTT for WASM files |
-| `PropellerJobReconciler`  | PropellerJob  | Creates child Tasks and aggregates outcomes                                           |
-| `FederatedJobReconciler`  | FederatedJob  | Creates TrainingRound resources sequentially                                          |
-| `TrainingRoundReconciler` | TrainingRound | Creates per-participant Tasks; aggregates once k-of-n complete                        |
+| Controller                | Owns          | Responsibility                                                          |
+| ------------------------- | ------------- | ----------------------------------------------------------------------- |
+| `PropletReconciler`       | Proplet       | Creates/reconciles k8s Deployments; monitors external proplets via MQTT |
+| `TaskReconciler`          | Task          | Schedules WASM on selected proplet; always dispatches via MQTT          |
+| `PropellerJobReconciler`  | PropellerJob  | Creates child Tasks and aggregates outcomes                             |
+| `FederatedJobReconciler`  | FederatedJob  | Creates TrainingRound resources sequentially                            |
+| `TrainingRoundReconciler` | TrainingRound | Creates per-participant Tasks; aggregates once k-of-n complete          |
 
 ## Prerequisites
 
@@ -59,6 +59,8 @@ Groups multiple tasks into a managed batch. Supports `parallel`, `sequential`, o
 - An MQTT broker for external proplet communication
 
 ## Quick Start
+
+Make sure you have started propeller and have an MQTT broker available. If not, follow the [propeller getting started instructions](https://www.absmach.eu/docs/propeller/getting-started/).
 
 ```bash
 # 1. Create cluster
@@ -74,7 +76,7 @@ make run ARGS="--mqtt-address='tcp://your-mqtt:1883' \
   --entity-id='<entity>' \
   --api-key='<api-key>'"
 
-# 4. (another terminal) Create a proplet
+# 4. (another terminal) Create a proplet. Make sure you replace the placeholders in `config/samples/propeller_v1_proplet.yaml` with your credentials.
 kubectl apply -f config/samples/propeller_v1_proplet.yaml
 
 # 5. Run a WASM task
@@ -87,114 +89,41 @@ All samples are in `config/samples/`. Edit them with your MQTT credentials befor
 
 ### Proplet Samples
 
-| File                                 | Type     | Description                                                |
-| ------------------------------------ | -------- | ---------------------------------------------------------- |
-| `propeller_v1_proplet.yaml`          | k8s      | Proplet managed as a K8s Deployment. Requires `k8s.image`. |
-| `propeller_v1_proplet_external.yaml` | external | External device proplet. No K8s resources.                 |
+| File                                 | Type     | Description                                                                          |
+| ------------------------------------ | -------- | ------------------------------------------------------------------------------------ |
+| `propeller_v1_proplet.yaml`          | k8s      | Proplet managed as a K8s Deployment. Requires `k8s.image`.                           |
+| `propeller_v1_proplet_external.yaml` | external | External device proplet. No K8s resources.                                           |
+| `propeller_v1_proplet_full.yaml`     | k8s      | Every optional `k8s.env.*` flag enabled — runs all feature-gated Task samples below. |
+| `propeller_v1_proplet_wasi_nn.yaml`  | k8s      | Dedicated `proplet-wasi-nn` image for the WASI-NN example.                           |
 
-### Task Samples
+### Registry Proxy Sample
 
-| File                                | Execution | Description                                                      |
-| ----------------------------------- | --------- | ---------------------------------------------------------------- |
-| `propeller_v1_task.yaml`            | MQTT      | WASM file dispatched via MQTT to target proplet.                 |
-| `propeller_v1_task_with_image.yaml` | MQTT      | WASM OCI image reference dispatched via MQTT.                    |
-| `propeller_v1_task_k8s_job.yaml`    | K8s Job   | Container image run as a K8s Job on k8s proplet.                 |
-| `propeller_v1_task_broadcast.yaml`  | Broadcast | WASM file sent to all proplets simultaneously.                   |
-| `propeller_v1_task_recurring.yaml`  | MQTT      | Cron-scheduled recurring task with `isRecurring` and `schedule`. |
-| `propeller_v1_task_monitoring.yaml` | MQTT      | Task with inline monitoring profile for metrics collection.      |
-| `propeller_v1_task_dag_a.yaml`      | MQTT      | DAG dependency target (no dependencies).                         |
-| `propeller_v1_task_dag.yaml`        | MQTT      | DAG dependent task (`dependsOn` + `runIf`).                      |
-
-### Workflow Samples
-
-| File                             | CRD          | Description                                     |
-| -------------------------------- | ------------ | ----------------------------------------------- |
-| `propeller_v1_propellerjob.yaml` | PropellerJob | Batch of parallel tasks with inline task specs. |
-| `propeller_v1_federatedjob.yaml` | FederatedJob | Multi-round federated learning experiment.      |
-
-## Test Plan
-
-### 1. WASM File Task (MQTT to k8s Proplet)
-
-Dispatches a base64 WASM binary via MQTT to the running k8s proplet. The proplet's Wasmtime runtime executes it.
+`propeller_v1_task_with_image.yaml`, `propeller_v1_task_tee.yaml` (on real TEE hardware), and `FederatedJob`/`TrainingRound`'s `taskWasmImage` all dispatch via `spec.imageUrl`, which the proplet resolves by requesting chunks from the registry proxy over MQTT — a standalone service from the sibling [`propeller`](https://github.com/absmach/propeller) repo (`cmd/proxy`), not a CRD this operator manages. `propeller_proxy_deployment.yaml` is a plain Deployment + Service for it, mirroring `propeller/docker/compose.propeller.yaml`'s proxy service:
 
 ```bash
-kubectl apply -f config/samples/propeller_v1_task.yaml
-# Edit propletId to target your k8s proplet
-kubectl get task wasm-addition -w
-# Expected: pending → running → completed
-# Result: 42 (10 + 32)
+# edit connectionConfig to a *distinct* Atom entity (same tenant/channel as
+# your operator and proplets, but its own entity ID — MQTT client IDs must
+# be unique per connection) and PROXY_REGISTRY_URL/credentials, then:
+kubectl apply -f config/samples/propeller_proxy_deployment.yaml
+kubectl logs deploy/propeller-proxy -f
 ```
 
-### 2. Container Image Task (K8s Job on k8s Proplet)
+Confirmed: the image pulls and the container starts and correctly attempts to subscribe to `registry/proplet` on your tenant/channel (verify in the logs) — it needs real, distinct credentials to get past that point. Without this running, any `imageUrl`-based Task or FederatedJob round reaches "requesting binary from registry" and then never completes (the proplet's chunk-assembly wait times out).
 
-Creates a K8s Job from a container image on a k8s-backed proplet.
+### Testing Other WASM Examples
+
+The samples above cover the examples in the sibling [`propeller`](https://github.com/absmach/propeller) repo's `examples/` directory with pre-built `.wasm` content already embedded. For anything else — a different example, or your own module — use `hack/apply-example-task.sh`, which base64-encodes a compiled `.wasm` file and applies a generated `Task` manifest, since a plain Kubernetes manifest has no way to load a local file's content on its own:
 
 ```bash
-kubectl apply -f config/samples/propeller_v1_task_k8s_job.yaml
-kubectl get jobs -w
-kubectl logs job/k8s-container-task-job
-# Expected: "hello from propeller k8s job"
+# (in the propeller repo) build the example first, e.g.:
+#   make compute
+
+PROPELLER_DIR=~/code/absmach/propeller \
+  ./hack/apply-example-task.sh compute compute 5
+kubectl get task compute-example -w
 ```
 
-### 3. Broadcast Task
-
-Sends a WASM file to all proplets simultaneously via MQTT.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_task_broadcast.yaml
-kubectl get task broadcast-task -w
-```
-
-### 4. Recurring Cron Task
-
-Task that runs on a cron schedule and re-queues after completion.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_task_recurring.yaml
-kubectl get task recurring-task -o jsonpath='{.status.nextRun}'
-```
-
-### 5. Monitoring Profile Task
-
-Task with metrics collection enabled during execution.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_task_monitoring.yaml
-kubectl get task monitored-task -w
-```
-
-### 6. DAG Dependency Tasks
-
-Tasks with dependency gates. Task B only runs after Task A completes successfully.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_task_dag_a.yaml
-# After dag-task-a completes:
-kubectl apply -f config/samples/propeller_v1_task_dag.yaml
-kubectl get task dag-task-a,dag-task-b -w
-```
-
-### 7. PropellerJob (Parallel Batch)
-
-Creates multiple child Tasks and tracks them as a batch.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_propellerjob.yaml
-kubectl get pjob sample-propeller-job -w
-kubectl get tasks -l jobId
-```
-
-### 8. FederatedJob (Federated Learning)
-
-Multi-round FL experiment with k-of-n aggregation.
-
-```bash
-kubectl apply -f config/samples/propeller_v1_federatedjob.yaml
-kubectl get federatedjob sample-fl-job -w
-kubectl get trainingrounds
-kubectl get tasks
-```
+`spec.file` works fine at real sizes (confirmed with a 298KB module) as long as the MQTT connection between operator and proplet is healthy — if a `Task` stays `running` with no result, check for repeated reconnects in the operator's logs before assuming it's a size problem. For genuinely large modules, or to avoid embedding one in every manifest, publish it to an OCI registry and use `spec.imageUrl` instead, which the proplet fetches in chunks via the registry proxy (see `propeller_v1_task_with_image.yaml`).
 
 ## Development
 

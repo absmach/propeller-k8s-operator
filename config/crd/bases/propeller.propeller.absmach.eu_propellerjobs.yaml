@@ -130,6 +130,12 @@ spec:
                         hal_storage_path field in the propeller's StartRequest.
                       type: string
                     imageUrl:
+                      description: |-
+                        ImageURL is an OCI registry reference (or plain HTTP/HTTPS URL) to a WASM
+                        module. It is not a container image to run: the assigned proplet fetches
+                        the module itself (via the registry proxy for OCI refs) and executes it
+                        with its own Wasmtime runtime, the same way it would run inline File
+                        bytes. Set exactly one of ImageURL or File.
                       type: string
                     inputs:
                       description: |-

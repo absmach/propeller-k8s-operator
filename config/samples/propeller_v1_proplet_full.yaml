@@ -1,0 +1,36 @@
+# A k8s-type Proplet with every optional feature flag enabled, so it can
+# run all of the feature-gated examples at once: HTTP client/server
+# (httpEnabled), attestation-test/hal-test (externalWasmRuntime + halEnabled),
+# and TEE (kbsUri/aaConfigPath — also needs real TEE hardware and imageUrl,
+# see propeller_v1_task_tee.yaml). Replace the connectionConfig placeholders
+# with your own credentials before applying.
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: k8s-proplet-full
+spec:
+  type: k8s
+  k8s:
+    image: "ghcr.io/absmach/propeller/proplet:latest"
+    logLevel: info
+    replicas: 1
+    env:
+      httpEnabled: true
+      externalWasmRuntime: ""
+      halEnabled: true
+      kbsUri: "http://kbs.example.com:8082"
+      aaConfigPath: "/etc/default/proplet.toml"
+  connectionConfig:
+    tenantId: "<your-tenant-id>"
+    channelId: "<your-channel-id>"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
+    mqttQos: 0
+    mqttTimeout: 30s
+  resources:
+    cpu: "50m"
+    memory: "128Mi"

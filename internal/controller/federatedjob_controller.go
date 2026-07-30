@@ -149,10 +149,15 @@ func (r *FederatedJobReconciler) mqttFLRoundStartHandler(ctx context.Context, ms
 		}
 	}
 
+	ns := r.namespace
+	if ns == "" {
+		ns = "default"
+	}
+
 	federatedJob := &propellerv1.FederatedJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "fl-" + experimentID,
-			Namespace: r.namespace,
+			Namespace: ns,
 		},
 		Spec: propellerv1.FederatedJobSpec{
 			ExperimentID:   experimentID,

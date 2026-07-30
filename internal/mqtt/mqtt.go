@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -14,6 +15,11 @@ const (
 	connTimeout    = 10
 	reconnTimeout  = 1
 	disconnTimeout = 250
+	// keepAlive is set below paho's 30s default: some network paths (e.g. a
+	// relay/tunnel) treat a connection as idle and terminate it before that
+	// default's next PINGREQ is due, causing frequent reconnects.
+	keepAlive   = 10 * time.Second
+	pingTimeout = 5 * time.Second
 )
 
 var (
@@ -32,6 +38,15 @@ type pubsub struct {
 	client  mqtt.Client
 	qos     byte
 	timeout time.Duration
+
+	// subsMu guards subs, which records every topic currently subscribed
+	// via Subscribe so resubscribeAll can restore them after a reconnect.
+	// SetCleanSession(true) means the broker forgets our subscriptions
+	// (and anything published while we were disconnected) on every
+	// reconnect, so without this the client would silently stop receiving
+	// messages after the first connection blip.
+	subsMu sync.Mutex
+	subs   map[string]Handler
 }
 
 type Handler func(topic string, msg map[string]any) error
@@ -48,16 +63,39 @@ func NewPubSub(url string, qos byte, id, username, password, tenantID, channelID
 		return nil, errEmptyClientID
 	}
 
-	client, err := newClient(url, id, username, password, tenantID, channelID, timeout)
+	ps := &pubsub{
+		qos:     qos,
+		timeout: timeout,
+		subs:    make(map[string]Handler),
+	}
+
+	client, err := newClient(url, id, username, password, tenantID, channelID, timeout, ps.resubscribeAll)
 	if err != nil {
 		return nil, err
 	}
+	ps.client = client
 
-	return &pubsub{
-		client:  client,
-		qos:     qos,
-		timeout: timeout,
-	}, nil
+	return ps, nil
+}
+
+func (ps *pubsub) resubscribeAll(client mqtt.Client) {
+	ps.subsMu.Lock()
+	defer ps.subsMu.Unlock()
+
+	for topic, handler := range ps.subs {
+		token := client.Subscribe(topic, ps.qos, ps.mqttHandler(handler))
+		go func(topic string, token mqtt.Token) {
+			if ok := token.WaitTimeout(ps.timeout); !ok {
+				mqttLogger.Error(errSubscribeTimeout, "failed to resubscribe after reconnect", "topic", topic)
+				return
+			}
+			if err := token.Error(); err != nil {
+				mqttLogger.Error(err, "failed to resubscribe after reconnect", "topic", topic)
+				return
+			}
+			mqttLogger.Info("resubscribed after reconnect", "topic", topic)
+		}(topic, token)
+	}
 }
 
 func (ps *pubsub) Publish(topic string, msg any) error {
@@ -95,6 +133,10 @@ func (ps *pubsub) Subscribe(topic string, handler Handler) error {
 		return errSubscribeTimeout
 	}
 
+	ps.subsMu.Lock()
+	ps.subs[topic] = handler
+	ps.subsMu.Unlock()
+
 	return nil
 }
 
@@ -112,6 +154,10 @@ func (ps *pubsub) Unsubscribe(topic string) error {
 		return errUnsubscribeTimeout
 	}
 
+	ps.subsMu.Lock()
+	delete(ps.subs, topic)
+	ps.subsMu.Unlock()
+
 	return nil
 }
 
@@ -121,7 +167,7 @@ func (ps *pubsub) Disconnect() error {
 	return nil
 }
 
-func newClient(address, id, username, password, tenantID, channelID string, timeout time.Duration) (mqtt.Client, error) {
+func newClient(address, id, username, password, tenantID, channelID string, timeout time.Duration, onConnect func(mqtt.Client)) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
@@ -130,7 +176,9 @@ func newClient(address, id, username, password, tenantID, channelID string, time
 		SetCleanSession(true).
 		SetAutoReconnect(true).
 		SetConnectTimeout(connTimeout * time.Second).
-		SetMaxReconnectInterval(reconnTimeout * time.Minute)
+		SetMaxReconnectInterval(reconnTimeout * time.Minute).
+		SetKeepAlive(keepAlive).
+		SetPingTimeout(pingTimeout)
 
 	if channelID != "" {
 		topic := fmt.Sprintf(aliveTopicTemplate, tenantID, channelID)
@@ -142,8 +190,9 @@ func newClient(address, id, username, password, tenantID, channelID string, time
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
 
-	opts.SetOnConnectHandler(func(_ mqtt.Client) {
+	opts.SetOnConnectHandler(func(c mqtt.Client) {
 		mqttLogger.Info("MQTT connected")
+		onConnect(c)
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {

@@ -1,3 +1,8 @@
+# Requires the registry proxy service running and reachable by both the
+# operator and the target proplet on the same tenant/channel — see
+# propeller_proxy_deployment.yaml. Without it, the proplet's registry
+# request for imageUrl never gets a chunk response and the Task stays at
+# phase: running indefinitely.
 apiVersion: propeller.propeller.absmach.eu/v1
 kind: Task
 metadata:

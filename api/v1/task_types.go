@@ -105,7 +105,12 @@ type TaskSpec struct {
 	FunctionName string `json:"functionName,omitempty"`
 	// +kubebuilder:validation:Enum=standard;federated
 	// +kubebuilder:default="standard"
-	Kind     TaskKind `json:"kind,omitempty"`
+	Kind TaskKind `json:"kind,omitempty"`
+	// ImageURL is an OCI registry reference (or plain HTTP/HTTPS URL) to a WASM
+	// module. It is not a container image to run: the assigned proplet fetches
+	// the module itself (via the registry proxy for OCI refs) and executes it
+	// with its own Wasmtime runtime, the same way it would run inline File
+	// bytes. Set exactly one of ImageURL or File.
 	ImageURL string   `json:"imageUrl,omitempty"`
 	File     []byte   `json:"file,omitempty"`
 	CLIArgs  []string `json:"cliArgs,omitempty"`

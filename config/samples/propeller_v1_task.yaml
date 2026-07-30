@@ -13,10 +13,6 @@ spec:
   inputs:
     - "10"
     - "32"
-  env:
-    EXAMPLE_ENV: "example-value"
-  mode: infer
   daemon: false
-  priority: 50
   propletSelector:
     propletId: "k8s-proplet"

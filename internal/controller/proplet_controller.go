@@ -371,11 +371,16 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 				envVars = append(envVars, corev1.EnvVar{Name: k, Value: fmt.Sprintf("%d", *v)})
 			}
 		}
+		addStringPtrEnv := func(k string, v *string) {
+			if v != nil {
+				envVars = append(envVars, corev1.EnvVar{Name: k, Value: *v})
+			}
+		}
 		addDurationEnv("PROPLET_LIVELINESS_INTERVAL", cfg.LivelinessInterval)
 		addDurationEnv("PROPLET_METRICS_INTERVAL", cfg.MetricsInterval)
 		addIntEnv("PROPLET_METRICS_PORT", cfg.MetricsPort)
 		addBoolEnv("PROPLET_METRICS_ENABLED", cfg.MetricsEnabled)
-		addEnv("PROPLET_EXTERNAL_WASM_RUNTIME", cfg.ExternalWasmRuntime)
+		addStringPtrEnv("PROPLET_EXTERNAL_WASM_RUNTIME", cfg.ExternalWasmRuntime)
 		addBoolEnv("PROPLET_HAL_ENABLED", cfg.HalEnabled)
 		addBoolEnv("PROPLET_HTTP_ENABLED", cfg.HttpEnabled)
 		addBoolEnv("PROPLET_USB_ENABLED", cfg.UsbEnabled)
@@ -404,12 +409,56 @@ func (r *PropletReconciler) deploymentNeedsUpdate(current, desired *appsv1.Deplo
 		dc := desired.Spec.Template.Spec.Containers[0]
 		if cc.Image != dc.Image ||
 			cc.ImagePullPolicy != dc.ImagePullPolicy ||
-			!reflect.DeepEqual(cc.Env, dc.Env) ||
-			!reflect.DeepEqual(cc.Resources, dc.Resources) {
+			!envVarsEqual(cc.Env, dc.Env) ||
+			!resourceRequirementsEqual(cc.Resources, dc.Resources) {
 			return true
 		}
 	}
 	return !reflect.DeepEqual(current.Labels, desired.Labels)
+}
+
+// envVarsEqual compares env vars by name regardless of order — buildPropletEnv
+// always emits the same order today, but comparing order-sensitively is
+// fragile and the wrong semantics for "does the Deployment need updating".
+func envVarsEqual(a, b []corev1.EnvVar) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	byName := make(map[string]corev1.EnvVar, len(a))
+	for _, v := range a {
+		byName[v.Name] = v
+	}
+	for _, v := range b {
+		other, ok := byName[v.Name]
+		if !ok || !reflect.DeepEqual(v, other) {
+			return false
+		}
+	}
+	return true
+}
+
+// resourceRequirementsEqual compares resource.Quantity values by their
+// numeric value (Cmp), not by reflect.DeepEqual — a Quantity round-tripped
+// through the API server can carry a different internal string/format cache
+// than a freshly-built one despite representing the identical amount, which
+// makes reflect.DeepEqual report a spurious diff and causes the reconciler
+// to loop on r.Update() forever without the Deployment ever actually
+// changing.
+func resourceRequirementsEqual(a, b corev1.ResourceRequirements) bool {
+	return resourceListEqual(a.Requests, b.Requests) && resourceListEqual(a.Limits, b.Limits)
+}
+
+func resourceListEqual(a, b corev1.ResourceList) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, qa := range a {
+		qb, ok := b[name]
+		if !ok || qa.Cmp(qb) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *PropletReconciler) updateK8sPropletStatus(ctx context.Context, proplet *propellerv1.Proplet, deployment *appsv1.Deployment) error {
@@ -555,8 +604,13 @@ func (r *PropletReconciler) reconcileExternalProplet(ctx context.Context, prople
 func (r *PropletReconciler) updatePropletStatus(ctx context.Context, proplet *propellerv1.Proplet) error {
 	logger := logf.FromContext(ctx).WithValues("proplet", proplet.Name)
 
+	oldStatus := proplet.Status.DeepCopy()
+
 	const maxRetries = 3
 	for i := range maxRetries {
+		if reflect.DeepEqual(&oldStatus, &proplet.Status) {
+			return nil
+		}
 		if err := r.Status().Update(ctx, proplet); err != nil {
 			if apierrors.IsConflict(err) && i < maxRetries-1 {
 				logger.Info("status update conflict, retrying", "attempt", i+1)
@@ -793,10 +847,15 @@ func (r *PropletReconciler) mqttDiscoveryHandler(ctx context.Context, msg map[st
 		}
 	}
 
+	ns := r.Namespace
+	if ns == "" {
+		ns = "default"
+	}
+
 	proplet := &propellerv1.Proplet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "discovered-" + propletID,
-			Namespace: r.Namespace,
+			Namespace: ns,
 		},
 		Spec: propellerv1.PropletSpec{
 			Type: propellerv1.ExternalProplet,
