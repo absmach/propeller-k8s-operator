@@ -80,3 +80,44 @@ jobs:
         with:
           files: dist/install.yaml
           generate_release_notes: true
+          body: |
+            ## Docker Image
+
+            A multi-architecture Docker image (linux/amd64, linux/arm64) is available on GHCR:
+
+            ```
+            docker pull ghcr.io/absmach/propeller-k8s-operator:${{ github.ref_name }}
+            docker pull ghcr.io/absmach/propeller-k8s-operator:latest
+            ```
+
+            Images are tagged with the release version (e.g., `${{ github.ref_name }}`) and `:latest` tracks the most recent commit on `main`.
+
+            ## Quick Start
+
+            1. Install the CRDs and operator in one shot using the consolidated `install.yaml` release asset:
+
+               ```bash
+               kubectl apply -f install.yaml
+               ```
+
+               By default the operator starts with no MQTT broker configured. Patch in your connection details:
+
+               ```bash
+               kubectl patch deployment propeller-k8s-operator-controller-manager \
+                 -n propeller-k8s-operator-system --type=json \
+                 -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--mqtt-address=tcp://your-mqtt:1883"},
+                      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--tenant-id=<tenant>"},
+                      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--channel-id=<channel>"},
+                      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entity-id=<entity>"},
+                      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--api-key=<api-key>"}]'
+               ```
+
+            2. Register a proplet and run a WASM task — grab `config/samples/propeller_v1_proplet.yaml` and `propeller_v1_task.yaml` from the [repo](https://github.com/absmach/propeller-k8s-operator/tree/${{ github.ref_name }}/config/samples), fill in your credentials, then:
+
+               ```bash
+               kubectl apply -f propeller_v1_proplet.yaml
+               kubectl apply -f propeller_v1_task.yaml
+               kubectl get task wasm-addition -w
+               ```
+
+            For the full set of samples (compute, HTTP, attestation, TEE, WASI-NN, DAG, ...) and everything else, see the [README](https://github.com/absmach/propeller-k8s-operator/blob/${{ github.ref_name }}/README.md).
