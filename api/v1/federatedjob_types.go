@@ -3,6 +3,7 @@ package v1
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type FederatedJobSpec struct {
@@ -75,5 +76,8 @@ type FederatedJobList struct {
 
 //nolint:gochecknoinits // init() is required for Kubernetes scheme registration
 func init() {
-	SchemeBuilder.Register(&FederatedJob{}, &FederatedJobList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &FederatedJob{}, &FederatedJobList{})
+		return nil
+	})
 }
