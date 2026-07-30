@@ -1,3 +1,7 @@
+# taskWasmImage is fetched the same way spec.imageUrl is on a plain Task —
+# confirmed each round's per-participant Task correctly reaches the
+# "requesting binary from registry" step, which then needs the registry
+# proxy running to actually complete — see propeller_proxy_deployment.yaml.
 apiVersion: propeller.propeller.absmach.eu/v1
 kind: FederatedJob
 metadata:

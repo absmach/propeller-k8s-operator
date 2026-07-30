@@ -1,0 +1,112 @@
+# The registry proxy is a standalone service from the sibling `propeller`
+# repo (cmd/proxy) — it is NOT a CRD this operator manages. Tasks that set
+# spec.imageUrl (propeller_v1_task_with_image.yaml, propeller_v1_task_tee.yaml,
+# and FederatedJob/TrainingRound's taskWasmImage) need this running
+# somewhere reachable by both the operator (to publish registry requests)
+# and every proplet (to receive the chunked binary) on the same
+# tenant/channel — deploying it into the same cluster as the operator is
+# the simplest way to get that.
+#
+# Fetches the module from spec.imageUrl's OCI registry, chunks it, and
+# delivers it to the requesting proplet over MQTT
+# (registry/proplet -> registry/server topics) — see
+# propeller/proxy/http.go and propeller/docker/compose.propeller.yaml for
+# the reference implementation this mirrors.
+#
+# Before applying:
+#   - Replace connectionConfig placeholders with a *distinct* Atom entity
+#     from the operator's and every proplet's (same tenant/channel is fine
+#     and required; a shared entity ID is not — MQTT client IDs must be
+#     unique per connection).
+#   - Set PROXY_REGISTRY_URL to the registry your imageUrl values live in
+#     (defaults to docker.io below, matching propeller's own default).
+#   - Set PROXY_AUTHENTICATE=true and the PROXY_REGISTRY_* credentials if
+#     that registry requires auth.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/component: registry-proxy
+  name: propeller-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: propeller-proxy
+  template:
+    metadata:
+      labels:
+        app: propeller-proxy
+    spec:
+      containers:
+        - name: propeller-proxy
+          image: "ghcr.io/absmach/propeller/proxy:latest"
+          ports:
+            - name: http
+              containerPort: 9191
+          env:
+            - name: PROXY_LOG_LEVEL
+              value: "info"
+            - name: PROXY_MQTT_ADDRESS
+              value: "tcp://your-mqtt-broker:1883"
+            - name: PROXY_MQTT_QOS
+              value: "2"
+            - name: PROXY_MQTT_TIMEOUT
+              value: "30s"
+            - name: PROXY_TENANT_ID
+              value: "<your-tenant-id>"
+            - name: PROXY_CHANNEL_ID
+              value: "<your-channel-id>"
+            - name: PROXY_ENTITY_ID
+              value: "<your-proxy-entity-id>"
+            - name: PROXY_API_KEY
+              value: "<your-proxy-api-key>"
+            - name: PROXY_HTTP_PORT
+              value: "9191"
+            - name: PROXY_CHUNK_SIZE
+              value: "512000"
+            - name: PROXY_AUTHENTICATE
+              value: "false"
+            - name: PROXY_REGISTRY_URL
+              value: "docker.io"
+            # Set these if PROXY_AUTHENTICATE is true:
+            # - name: PROXY_REGISTRY_TOKEN
+            #   value: ""
+            # - name: PROXY_REGISTRY_USERNAME
+            #   value: ""
+            # - name: PROXY_REGISTRY_PASSWORD
+            #   value: ""
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/component: registry-proxy
+  name: propeller-proxy
+spec:
+  selector:
+    app: propeller-proxy
+  ports:
+    - name: http
+      port: 9191
+      targetPort: http

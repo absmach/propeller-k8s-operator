@@ -1,6 +1,9 @@
 resources:
+- propeller_proxy_deployment.yaml
 - propeller_v1_proplet_external.yaml
 - propeller_v1_proplet.yaml
+- propeller_v1_proplet_full.yaml
+- propeller_v1_proplet_wasi_nn.yaml
 - propeller_v1_task.yaml
 - propeller_v1_task_with_image.yaml
 - propeller_v1_task_recurring.yaml
@@ -8,6 +11,15 @@ resources:
 - propeller_v1_task_monitoring.yaml
 - propeller_v1_task_dag_a.yaml
 - propeller_v1_task_dag.yaml
+- propeller_v1_task_compute.yaml
+- propeller_v1_task_string_input.yaml
+- propeller_v1_task_http_server.yaml
+- propeller_v1_task_http_client.yaml
+- propeller_v1_task_attestation_test.yaml
+- propeller_v1_task_hal_test.yaml
+- propeller_v1_task_tee.yaml
+- propeller_v1_task_filesystem.yaml
+- propeller_v1_task_wasi_http.yaml
 - propeller_v1_propellerjob.yaml
 - propeller_v1_federatedjob.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

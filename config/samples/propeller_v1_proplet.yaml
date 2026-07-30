@@ -12,11 +12,11 @@ spec:
     logLevel: info
     replicas: 1
   connectionConfig:
-    tenantId: "514dcda6-a2a7-4143-90c4-2478aebfc6ce"
-    channelId: "8b23d13f-99e4-4b52-b095-9dd6816cd81f"
-    entityId: "26eb7b3d-9f41-4afc-a252-f124e80c1fc3"
-    apiKey: "atom_a03bf9d04e9f4df4b89b269ab211661f_89b4595955311d5b5808dac87da7e0517f8d2a9cff440afa527fe96d64f6d69f"
-    mqttAddress: "tcp://0.tcp.in.ngrok.io:17076"
+    tenantId: "<your-tenant-id>"
+    channelId: "<your-channel-id>"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
     mqttQos: 0
     mqttTimeout: 30s
   resources:
