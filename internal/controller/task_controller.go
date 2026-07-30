@@ -762,10 +762,16 @@ func (r *TaskReconciler) enqueueTaskByUID(ctx context.Context, taskUID string, u
 		select {
 		case r.taskEvents <- event.GenericEvent{Object: t}:
 		default:
-			// Channel full; periodic reconcile will drain the pending update.
+			// Channel full; the periodic safety RequeueAfter in handleRunning
+			// will drain the pending update on its next tick.
+			log.FromContext(ctx).Info("taskEvents channel full, relying on safety requeue", "taskUID", taskUID)
 		}
 		return nil
 	}
+	// No matching Task found (e.g. deleted, or informer cache not yet synced
+	// for a just-created object). The update is dropped: without a match we
+	// have no object to key a reconcile off of.
+	log.FromContext(ctx).Info("no Task found for MQTT result, dropping update", "taskUID", taskUID)
 	return nil
 }
 

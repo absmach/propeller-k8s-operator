@@ -149,8 +149,11 @@ spec:
                         description: Description sets PROPLET_DESCRIPTION.
                         type: string
                       externalWasmRuntime:
-                        description: ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME
-                          (path to wasmtime binary).
+                        description: |-
+                          ExternalWasmRuntime sets PROPLET_EXTERNAL_WASM_RUNTIME (path to an
+                          external wasmtime binary). A pointer so an explicit empty string
+                          (forcing the proplet's built-in runtime, distinct from an external
+                          wasmtime subprocess) can be distinguished from the field being unset.
                         type: string
                       halEnabled:
                         description: HalEnabled sets PROPLET_HAL_ENABLED.

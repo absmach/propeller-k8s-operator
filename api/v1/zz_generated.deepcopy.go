@@ -506,6 +506,11 @@ func (in *PropletEnvConfig) DeepCopyInto(out *PropletEnvConfig) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.ExternalWasmRuntime != nil {
+		in, out := &in.ExternalWasmRuntime, &out.ExternalWasmRuntime
+		*out = new(string)
+		**out = **in
+	}
 	if in.HalEnabled != nil {
 		in, out := &in.HalEnabled, &out.HalEnabled
 		*out = new(bool)
