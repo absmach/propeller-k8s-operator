@@ -304,7 +304,7 @@ func main() {
 	var mqttPubSub mqtt.PubSub
 	if mqttAddress != "" {
 		mqttPubSub, err = mqtt.NewPubSub(
-			mqttAddress, byte(mqttQoS), "propeller-controller", entityID, apiKey, tenantID, channelID, mqttTimeout,
+			mqttAddress, byte(mqttQoS), entityID, entityID, apiKey, tenantID, channelID, mqttTimeout,
 		)
 		if err != nil {
 			setupLog.Error(err, "failed to initialize mqtt pubsub")
