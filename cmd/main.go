@@ -71,10 +71,10 @@ func main() {
 	var mqttAddress string
 	var mqttQoS uint
 	var mqttTimeout time.Duration
-	var domainID string
+	var tenantID string
 	var channelID string
-	var clientID string
-	var clientKey string
+	var entityID string
+	var apiKey string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -99,10 +99,10 @@ func main() {
 	flag.StringVar(&mqttAddress, "mqtt-address", "", "The address of the MQTT broker.")
 	flag.UintVar(&mqttQoS, "mqtt-qos", 0, "The QoS level of the MQTT messages.")
 	flag.DurationVar(&mqttTimeout, "mqtt-timeout", 30*time.Second, "The timeout for MQTT operations.")
-	flag.StringVar(&domainID, "domain-id", "", "The domain ID.")
+	flag.StringVar(&tenantID, "tenant-id", "", "The tenant ID.")
 	flag.StringVar(&channelID, "channel-id", "", "The channel ID.")
-	flag.StringVar(&clientID, "client-id", "", "The client ID.")
-	flag.StringVar(&clientKey, "client-key", "", "The client key.")
+	flag.StringVar(&entityID, "entity-id", "", "The entity ID.")
+	flag.StringVar(&apiKey, "api-key", "", "The API key.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -225,7 +225,7 @@ func main() {
 	}
 
 	mqttPubSub, err := mqtt.NewPubSub(
-		mqttAddress, byte(mqttQoS), "propeller-controller", clientID, clientKey, domainID, channelID, mqttTimeout,
+		mqttAddress, byte(mqttQoS), "propeller-controller", entityID, apiKey, tenantID, channelID, mqttTimeout,
 	)
 	if err != nil {
 		setupLog.Error(err, "failed to initialize mqtt pubsub")
@@ -235,14 +235,14 @@ func main() {
 	if err := (&controller.TaskReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, mqttPubSub); err != nil {
+	}).SetupWithManager(tenantID, channelID, mgr, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Task")
 		os.Exit(1)
 	}
 	if err := (&controller.PropletReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(domainID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
+	}).SetupWithManager(tenantID, channelID, mgr, livelinessInterval, lastSeenThreshold, mqttPubSub); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proplet")
 		os.Exit(1)
 	}

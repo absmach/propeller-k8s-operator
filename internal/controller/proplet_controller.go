@@ -1007,12 +1007,12 @@ func (r *PropletReconciler) mqttHandler() func(topic string, msg map[string]any)
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PropletReconciler) SetupWithManager(
-	domainID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
+	tenantID, channelID string, mgr ctrl.Manager, livelinessInterval, lastSeenThreshold time.Duration, pubsub mqtt.PubSub,
 ) error {
 	r.livelinessInterval = livelinessInterval
 	r.lastSeenThreshold = lastSeenThreshold
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(propellerBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(propellerBaseTopic, tenantID, channelID)
 
 	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
 		return err

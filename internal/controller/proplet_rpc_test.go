@@ -26,7 +26,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const testNamespace = "default"
+const (
+	testNamespace = "default"
+	testTenantID  = "tenant-1"
+	testChannelID = "channel-1"
+)
 
 func propletWithRPC(rpc *propellerv1.RPCSpec) *propellerv1.Proplet {
 	return &propellerv1.Proplet{
@@ -251,8 +255,8 @@ func TestBuildPropletDeploymentRPCWiring(t *testing.T) {
 			r := &PropletReconciler{}
 			proplet := propletWithRPC(tc.rpc)
 			proplet.Spec.ConnectionConfig = propellerv1.ConnectionConfig{
-				TenantID:    "tenant-1",
-				ChannelID:   "channel-1",
+				TenantID:    testTenantID,
+				ChannelID:   testChannelID,
 				EntityID:    "entity-1",
 				APIKey:      "key-1",
 				MQTTAddress: "tcp://localhost:1883",
@@ -335,22 +339,22 @@ func TestBaseTopicMatchesPropeller(t *testing.T) {
 	}{
 		{
 			desc:      "start command reaches the topic a proplet subscribes to",
-			tenantID:  "tenant-1",
-			channelID: "channel-1",
+			tenantID:  testTenantID,
+			channelID: testChannelID,
 			path:      "/control/manager/start",
 			want:      "m/tenant-1/c/channel-1/control/manager/start",
 		},
 		{
 			desc:      "liveness arrives on the topic a proplet publishes to",
-			tenantID:  "tenant-1",
-			channelID: "channel-1",
+			tenantID:  testTenantID,
+			channelID: testChannelID,
 			path:      "/control/proplet/alive",
 			want:      "m/tenant-1/c/channel-1/control/proplet/alive",
 		},
 		{
 			desc:      "results arrive on the topic a proplet publishes to",
-			tenantID:  "tenant-1",
-			channelID: "channel-1",
+			tenantID:  testTenantID,
+			channelID: testChannelID,
 			path:      "/control/proplet/results",
 			want:      "m/tenant-1/c/channel-1/control/proplet/results",
 		},

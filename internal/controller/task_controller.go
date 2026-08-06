@@ -39,7 +39,7 @@ type TaskReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	scheduler scheduler.Scheduler
-	domainID  string
+	tenantID  string
 	channelID string
 	pubsub    mqtt.PubSub
 	baseTopic string
@@ -303,12 +303,12 @@ func (r *TaskReconciler) monitorTask(ctx context.Context, task *propellerv1.Task
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *TaskReconciler) SetupWithManager(domainID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub) error {
+func (r *TaskReconciler) SetupWithManager(tenantID, channelID string, mgr ctrl.Manager, pubsub mqtt.PubSub) error {
 	r.scheduler = scheduler.NewRoundRobin()
-	r.domainID = domainID
+	r.tenantID = tenantID
 	r.channelID = channelID
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(propellerBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(propellerBaseTopic, tenantID, channelID)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&propellerv1.Task{}).

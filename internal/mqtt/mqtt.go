@@ -43,12 +43,12 @@ type PubSub interface {
 	Disconnect() error
 }
 
-func NewPubSub(url string, qos byte, id, username, password, domainID, channelID string, timeout time.Duration) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password, tenantID, channelID string, timeout time.Duration) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyClientID
 	}
 
-	client, err := newClient(url, id, username, password, domainID, channelID, timeout)
+	client, err := newClient(url, id, username, password, tenantID, channelID, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (ps *pubsub) Disconnect() error {
 	return nil
 }
 
-func newClient(address, id, username, password, domainID, channelID string, timeout time.Duration) (mqtt.Client, error) {
+func newClient(address, id, username, password, tenantID, channelID string, timeout time.Duration) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
@@ -133,7 +133,7 @@ func newClient(address, id, username, password, domainID, channelID string, time
 		SetMaxReconnectInterval(reconnTimeout * time.Minute)
 
 	if channelID != "" {
-		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
+		topic := fmt.Sprintf(aliveTopicTemplate, tenantID, channelID)
 		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
