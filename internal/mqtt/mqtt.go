@@ -24,7 +24,7 @@ var (
 	errEmptyClientID      = errors.New("empty client ID")
 
 	aliveTopicTemplate = "m/%s/c/%s/control/proplet/alive"
-	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
+	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","channel_id":"%s"}`
 	mqttLogger         = logf.Log.WithName("mqtt")
 )
 
