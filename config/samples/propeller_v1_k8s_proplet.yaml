@@ -41,11 +41,11 @@ spec:
               value: 10s
             - name: PROPLET_LIVELINESS_INTERVAL
               value: "5s"
-            - name: PROPLET_DOMAIN_ID
+            - name: PROPLET_TENANT_ID
               value: cbba98e5-84a9-422c-ad00-f6ee21d6695a
             - name: PROPLET_CHANNEL_ID
               value: 16722ec1-ce8a-446d-a829-d83459f1c40e
-            - name: PROPLET_CLIENT_ID
+            - name: PROPLET_ENTITY_ID
               value: ef007c37-3253-4860-9986-cc9262a8e0f1
-            - name: PROPLET_CLIENT_KEY
+            - name: PROPLET_API_KEY
               value: b07514e4-05a6-40bc-acde-3030e757839c

@@ -311,7 +311,7 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 									Value: fmt.Sprintf("%d", proplet.Spec.ConnectionConfig.MQTTQoS),
 								},
 								{
-									Name:  "PROPLET_DOMAIN_ID",
+									Name:  "PROPLET_TENANT_ID",
 									Value: proplet.Spec.ConnectionConfig.DomainID,
 								},
 								{
@@ -319,11 +319,11 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 									Value: proplet.Spec.ConnectionConfig.ChannelID,
 								},
 								{
-									Name:  "PROPLET_CLIENT_ID",
+									Name:  "PROPLET_ENTITY_ID",
 									Value: proplet.Spec.ConnectionConfig.ClientID,
 								},
 								{
-									Name:  "PROPLET_CLIENT_KEY",
+									Name:  "PROPLET_API_KEY",
 									Value: proplet.Spec.ConnectionConfig.ClientKey,
 								},
 							},
