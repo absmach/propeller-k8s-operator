@@ -40,7 +40,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var superMQBaseTopic = "m/%s/c/%s/messages"
+var propellerBaseTopic = "m/%s/c/%s"
 
 const (
 	PropletFinalizerName = "propeller.propeller.abstractmachines.fr/finalizer"
@@ -1012,7 +1012,7 @@ func (r *PropletReconciler) SetupWithManager(
 	r.livelinessInterval = livelinessInterval
 	r.lastSeenThreshold = lastSeenThreshold
 	r.pubsub = pubsub
-	r.baseTopic = fmt.Sprintf(superMQBaseTopic, domainID, channelID)
+	r.baseTopic = fmt.Sprintf(propellerBaseTopic, domainID, channelID)
 
 	if err := r.pubsub.Subscribe(r.baseTopic+"/#", r.mqttHandler()); err != nil {
 		return err

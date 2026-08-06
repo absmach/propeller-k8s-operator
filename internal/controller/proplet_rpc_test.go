@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"testing"
 
 	propellerv1 "github.com/absmach/propeller/api/v1"
@@ -318,6 +319,50 @@ func TestBuildPropletService(t *testing.T) {
 			g.Expect(svc.Spec.Ports).To(gomega.HaveLen(1))
 			g.Expect(svc.Spec.Ports[0].Port).To(gomega.Equal(tc.wantPort))
 			g.Expect(svc.Spec.Ports[0].TargetPort.IntVal).To(gomega.Equal(tc.wantPort))
+		})
+	}
+}
+
+func TestBaseTopicMatchesPropeller(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		desc      string
+		tenantID  string
+		channelID string
+		path      string
+		want      string
+	}{
+		{
+			desc:      "start command reaches the topic a proplet subscribes to",
+			tenantID:  "tenant-1",
+			channelID: "channel-1",
+			path:      "/control/manager/start",
+			want:      "m/tenant-1/c/channel-1/control/manager/start",
+		},
+		{
+			desc:      "liveness arrives on the topic a proplet publishes to",
+			tenantID:  "tenant-1",
+			channelID: "channel-1",
+			path:      "/control/proplet/alive",
+			want:      "m/tenant-1/c/channel-1/control/proplet/alive",
+		},
+		{
+			desc:      "results arrive on the topic a proplet publishes to",
+			tenantID:  "tenant-1",
+			channelID: "channel-1",
+			path:      "/control/proplet/results",
+			want:      "m/tenant-1/c/channel-1/control/proplet/results",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			g := gomega.NewWithT(t)
+
+			base := fmt.Sprintf(propellerBaseTopic, tc.tenantID, tc.channelID)
+			g.Expect(base + tc.path).To(gomega.Equal(tc.want))
 		})
 	}
 }
