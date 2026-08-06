@@ -3,7 +3,6 @@ package mqtt
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -23,9 +22,7 @@ var (
 	errEmptyTopic         = errors.New("empty topic")
 	errEmptyClientID      = errors.New("empty client ID")
 
-	aliveTopicTemplate = "m/%s/c/%s/control/proplet/alive"
-	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","channel_id":"%s"}`
-	mqttLogger         = logf.Log.WithName("mqtt")
+	mqttLogger = logf.Log.WithName("mqtt")
 )
 
 type pubsub struct {
@@ -43,12 +40,12 @@ type PubSub interface {
 	Disconnect() error
 }
 
-func NewPubSub(url string, qos byte, id, username, password, tenantID, channelID string, timeout time.Duration) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password string, timeout time.Duration) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyClientID
 	}
 
-	client, err := newClient(url, id, username, password, tenantID, channelID, timeout)
+	client, err := newClient(url, id, username, password, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +118,10 @@ func (ps *pubsub) Disconnect() error {
 	return nil
 }
 
-func newClient(address, id, username, password, tenantID, channelID string, timeout time.Duration) (mqtt.Client, error) {
+// clientOptions builds the broker options for the operator's own connection.
+// The operator is a controller, not a proplet, so it registers no will: a will
+// on the proplet liveness topic would announce a proplet that does not exist.
+func clientOptions(address, id, username, password string) *mqtt.ClientOptions {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
@@ -132,14 +132,8 @@ func newClient(address, id, username, password, tenantID, channelID string, time
 		SetConnectTimeout(connTimeout * time.Second).
 		SetMaxReconnectInterval(reconnTimeout * time.Minute)
 
-	if channelID != "" {
-		topic := fmt.Sprintf(aliveTopicTemplate, tenantID, channelID)
-		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
-		opts.SetWill(topic, lwtPayload, 0, false)
-	}
-
 	opts.SetOnConnectHandler(func(_ mqtt.Client) {
-		mqttLogger.Info("MQTT connection lost")
+		mqttLogger.Info("MQTT connected")
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
@@ -158,7 +152,11 @@ func newClient(address, id, username, password, tenantID, channelID string, time
 		mqttLogger.Info("MQTT reconnecting", args...)
 	})
 
-	client := mqtt.NewClient(opts)
+	return opts
+}
+
+func newClient(address, id, username, password string, timeout time.Duration) (mqtt.Client, error) {
+	client := mqtt.NewClient(clientOptions(address, id, username, password))
 
 	token := client.Connect()
 	if token.Error() != nil {

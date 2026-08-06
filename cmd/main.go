@@ -225,7 +225,7 @@ func main() {
 	}
 
 	mqttPubSub, err := mqtt.NewPubSub(
-		mqttAddress, byte(mqttQoS), "propeller-controller", entityID, apiKey, tenantID, channelID, mqttTimeout,
+		mqttAddress, byte(mqttQoS), "propeller-controller", entityID, apiKey, mqttTimeout,
 	)
 	if err != nil {
 		setupLog.Error(err, "failed to initialize mqtt pubsub")
