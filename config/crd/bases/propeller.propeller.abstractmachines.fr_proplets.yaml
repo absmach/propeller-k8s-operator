@@ -122,6 +122,48 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  rpc:
+                    description: |-
+                      RPCSpec configures the proplet JSON-RPC server, which exposes each
+                      deployed function as a callable method.
+                    properties:
+                      enabled:
+                        default: false
+                        type: boolean
+                      port:
+                        default: 9094
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      tokenSecretRef:
+                        description: |-
+                          TokenSecretRef supplies the bearer token the proplet requires on
+                          every RPC call. It is mandatory when Enabled is true, because the
+                          server is reachable from anywhere in the cluster once exposed.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
                 required:
                 - image
                 type: object

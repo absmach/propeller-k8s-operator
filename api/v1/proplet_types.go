@@ -58,6 +58,24 @@ type K8sPropletSpec struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
+	// +kubebuilder:validation:Optional
+	RPC *RPCSpec `json:"rpc,omitempty,omitzero"`
+}
+
+// RPCSpec configures the proplet JSON-RPC server, which exposes each
+// deployed function as a callable method.
+type RPCSpec struct {
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:default=9094
+	Port int32 `json:"port,omitempty"`
+	// TokenSecretRef supplies the bearer token the proplet requires on
+	// every RPC call. It is mandatory when Enabled is true, because the
+	// server is reachable from anywhere in the cluster once exposed.
+	// +kubebuilder:validation:Optional
+	TokenSecretRef *corev1.SecretKeySelector `json:"tokenSecretRef,omitempty,omitzero"`
 }
 
 type ConnectionConfig struct {

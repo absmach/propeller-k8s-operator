@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-rpc-token
+type: Opaque
+stringData:
+  token: replace-me
+---
+apiVersion: propeller.propeller.abstractmachines.fr/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: demo-rpc
+spec:
+  connectionConfig:
+    channelId: 16722ec1-ce8a-446d-a829-d83459f1c40e
+    clientId: ef007c37-3253-4860-9986-cc9262a8e0f1
+    clientKey: b07514e4-05a6-40bc-acde-3030e757839c
+    domainId: cbba98e5-84a9-422c-ad00-f6ee21d6695a
+    mqttAddress: tcp://0.tcp.in.ngrok.io:16621
+    mqttQos: 1
+    mqttTimeout: 10s
+  k8s:
+    image: docker.io/rodneydav/propeller-k8s-operator-proplet:latest
+    logLevel: info
+    replicas: 1
+    rpc:
+      enabled: true
+      port: 9094
+      tokenSecretRef:
+        name: demo-rpc-token
+        key: token
+  resources:
+    cpu: 50m
+    memory: 128Mi
+  type: k8s
