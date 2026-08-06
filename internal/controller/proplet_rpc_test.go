@@ -250,10 +250,10 @@ func TestBuildPropletDeploymentRPCWiring(t *testing.T) {
 			r := &PropletReconciler{}
 			proplet := propletWithRPC(tc.rpc)
 			proplet.Spec.ConnectionConfig = propellerv1.ConnectionConfig{
-				DomainID:    "tenant-1",
+				TenantID:    "tenant-1",
 				ChannelID:   "channel-1",
-				ClientID:    "entity-1",
-				ClientKey:   "key-1",
+				EntityID:    "entity-1",
+				APIKey:      "key-1",
 				MQTTAddress: "tcp://localhost:1883",
 				MQTTTimeout: &metav1.Duration{},
 			}

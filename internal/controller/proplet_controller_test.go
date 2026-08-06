@@ -38,7 +38,7 @@ var _ = Describe("Proplet Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: testNamespace, // TODO(user):Modify as needed
 		}
 		proplet := &propellerv1.Proplet{}
 
@@ -49,7 +49,7 @@ var _ = Describe("Proplet Controller", func() {
 				resource := &propellerv1.Proplet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: testNamespace,
 					},
 					Spec: propellerv1.PropletSpec{
 						Type: propellerv1.PropletKind("k8s"),
@@ -57,9 +57,9 @@ var _ = Describe("Proplet Controller", func() {
 							Image: "test-image",
 						},
 						ConnectionConfig: propellerv1.ConnectionConfig{
-							ClientID:    "test-client",
-							ClientKey:   "test-key",
-							DomainID:    "test-domain",
+							EntityID:    "test-client",
+							APIKey:      "test-key",
+							TenantID:    "test-domain",
 							ChannelID:   "test-channel",
 							MQTTAddress: "tcp://localhost:1883",
 						},

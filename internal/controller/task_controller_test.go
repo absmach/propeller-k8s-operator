@@ -38,7 +38,7 @@ var _ = Describe("Task Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: testNamespace, // TODO(user):Modify as needed
 		}
 		task := &propellerv1.Task{}
 
@@ -49,7 +49,7 @@ var _ = Describe("Task Controller", func() {
 				resource := &propellerv1.Task{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: testNamespace,
 					},
 					Spec: propellerv1.TaskSpec{
 						Name:         "test-task",

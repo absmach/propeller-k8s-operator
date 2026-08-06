@@ -54,7 +54,8 @@ const (
 	envRPCBindAddress = "PROPLET_RPC_BIND_ADDRESS"
 	envRPCToken       = "PROPLET_RPC_TOKEN"
 
-	appLabelKey = "app"
+	appLabelKey     = "app"
+	propletLabelKey = "propeller.absmach.fr/proplet"
 )
 
 // PropletReconciler reconciles a Proplet object
@@ -317,17 +318,17 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 			Name:      fmt.Sprintf("%s-proplet", proplet.Name),
 			Namespace: proplet.Namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/name":       "proplet",
-				"app.kubernetes.io/instance":   proplet.Name,
-				"app.kubernetes.io/component":  "worker",
-				"propeller.absmach.fr/proplet": proplet.Name,
+				"app.kubernetes.io/name":      "proplet",
+				"app.kubernetes.io/instance":  proplet.Name,
+				"app.kubernetes.io/component": "worker",
+				propletLabelKey:               proplet.Name,
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"propeller.absmach.fr/proplet": proplet.Name,
+					propletLabelKey: proplet.Name,
 				},
 			},
 			Strategy: appsv1.DeploymentStrategy{
@@ -346,7 +347,7 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"propeller.absmach.fr/proplet": proplet.Name,
+						propletLabelKey: proplet.Name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -380,7 +381,7 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 								},
 								{
 									Name:  "PROPLET_TENANT_ID",
-									Value: proplet.Spec.ConnectionConfig.DomainID,
+									Value: proplet.Spec.ConnectionConfig.TenantID,
 								},
 								{
 									Name:  "PROPLET_CHANNEL_ID",
@@ -388,11 +389,11 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 								},
 								{
 									Name:  "PROPLET_ENTITY_ID",
-									Value: proplet.Spec.ConnectionConfig.ClientID,
+									Value: proplet.Spec.ConnectionConfig.EntityID,
 								},
 								{
 									Name:  "PROPLET_API_KEY",
-									Value: proplet.Spec.ConnectionConfig.ClientKey,
+									Value: proplet.Spec.ConnectionConfig.APIKey,
 								},
 							},
 							Ports: rpcContainerPorts(proplet),
@@ -877,7 +878,7 @@ func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[str
 
 	var proplet *propellerv1.Proplet
 	for i := range proplets.Items {
-		if proplets.Items[i].Spec.ConnectionConfig.ClientID == propletId {
+		if proplets.Items[i].Spec.ConnectionConfig.EntityID == propletId {
 			proplet = &proplets.Items[i]
 			break
 		}

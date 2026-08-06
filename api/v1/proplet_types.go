@@ -81,16 +81,16 @@ type RPCSpec struct {
 type ConnectionConfig struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	DomainID string `json:"domainId"`
+	TenantID string `json:"tenantId"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	ChannelID string `json:"channelId"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	ClientID string `json:"clientId"`
+	EntityID string `json:"entityId"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	ClientKey string `json:"clientKey"`
+	APIKey string `json:"apiKey"`
 	// +kubebuilder:validation:Required
 	MQTTAddress string `json:"mqttAddress"`
 	// +kubebuilder:default="30s"

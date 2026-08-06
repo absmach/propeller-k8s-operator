@@ -63,16 +63,13 @@ spec:
             properties:
               connectionConfig:
                 properties:
+                  apiKey:
+                    minLength: 1
+                    type: string
                   channelId:
                     minLength: 1
                     type: string
-                  clientId:
-                    minLength: 1
-                    type: string
-                  clientKey:
-                    minLength: 1
-                    type: string
-                  domainId:
+                  entityId:
                     minLength: 1
                     type: string
                   mqttAddress:
@@ -85,12 +82,15 @@ spec:
                   mqttTimeout:
                     default: 30s
                     type: string
+                  tenantId:
+                    minLength: 1
+                    type: string
                 required:
+                - apiKey
                 - channelId
-                - clientId
-                - clientKey
-                - domainId
+                - entityId
                 - mqttAddress
+                - tenantId
                 type: object
               external:
                 properties:

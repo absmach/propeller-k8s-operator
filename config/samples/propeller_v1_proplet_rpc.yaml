@@ -16,9 +16,9 @@ metadata:
 spec:
   connectionConfig:
     channelId: 16722ec1-ce8a-446d-a829-d83459f1c40e
-    clientId: ef007c37-3253-4860-9986-cc9262a8e0f1
-    clientKey: b07514e4-05a6-40bc-acde-3030e757839c
-    domainId: cbba98e5-84a9-422c-ad00-f6ee21d6695a
+    entityId: ef007c37-3253-4860-9986-cc9262a8e0f1
+    apiKey: b07514e4-05a6-40bc-acde-3030e757839c
+    tenantId: cbba98e5-84a9-422c-ad00-f6ee21d6695a
     mqttAddress: tcp://0.tcp.in.ngrok.io:16621
     mqttQos: 1
     mqttTimeout: 10s
