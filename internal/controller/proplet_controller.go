@@ -56,6 +56,9 @@ const (
 
 	appLabelKey     = "app"
 	propletLabelKey = "propeller.absmach.fr/proplet"
+
+	msgKeyNamespace = "namespace"
+	msgKeyPropletID = "proplet_id"
 )
 
 // PropletReconciler reconciles a Proplet object
@@ -860,19 +863,30 @@ func (r *PropletReconciler) propletMatchesTaskSelector(proplet *propellerv1.Prop
 	return true
 }
 
+// livenessListOptions scopes a proplet lookup to the namespace the proplet
+// reported. Proplets that omit it, such as external ones running off cluster,
+// fall back to a search across every namespace.
+func livenessListOptions(msg map[string]any) []client.ListOption {
+	namespace, ok := msg[msgKeyNamespace].(string)
+	if !ok || namespace == "" {
+		return nil
+	}
+
+	return []client.ListOption{client.InNamespace(namespace)}
+}
+
 func (r *PropletReconciler) mqttLivenessHandler(ctx context.Context, msg map[string]any) error {
-	propletId, ok := msg["proplet_id"].(string)
+	propletId, ok := msg[msgKeyPropletID].(string)
 	if !ok {
 		return errors.New("invalid proplet id")
 	}
 	if propletId == "" {
 		return errors.New("proplet id is empty")
 	}
-	logger := logf.FromContext(ctx).WithValues("proplet_id", propletId)
+	logger := logf.FromContext(ctx).WithValues(msgKeyPropletID, propletId)
 
-	// Search across all namespaces since namespace is not provided in MQTT message
 	var proplets propellerv1.PropletList
-	if err := r.List(ctx, &proplets); err != nil {
+	if err := r.List(ctx, &proplets, livenessListOptions(msg)...); err != nil {
 		return err
 	}
 

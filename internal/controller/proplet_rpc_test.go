@@ -24,6 +24,7 @@ import (
 	"github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -367,6 +368,55 @@ func TestBaseTopicMatchesPropeller(t *testing.T) {
 
 			base := fmt.Sprintf(propellerBaseTopic, tc.tenantID, tc.channelID)
 			g.Expect(base + tc.path).To(gomega.Equal(tc.want))
+		})
+	}
+}
+
+func TestLivenessListOptions(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		desc          string
+		msg           map[string]any
+		wantNamespace string
+		wantAll       bool
+	}{
+		{
+			desc:          "a reported namespace scopes the lookup",
+			msg:           map[string]any{msgKeyPropletID: "p1", "status": "alive", msgKeyNamespace: "edge"},
+			wantNamespace: "edge",
+		},
+		{
+			desc:    "an absent namespace searches every namespace",
+			msg:     map[string]any{msgKeyPropletID: "p1", "status": "alive"},
+			wantAll: true,
+		},
+		{
+			desc:    "an empty namespace searches every namespace",
+			msg:     map[string]any{msgKeyPropletID: "p1", msgKeyNamespace: ""},
+			wantAll: true,
+		},
+		{
+			desc:    "a non string namespace searches every namespace",
+			msg:     map[string]any{msgKeyPropletID: "p1", msgKeyNamespace: 7},
+			wantAll: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			g := gomega.NewWithT(t)
+
+			opts := livenessListOptions(tc.msg)
+			if tc.wantAll {
+				g.Expect(opts).To(gomega.BeEmpty())
+
+				return
+			}
+
+			g.Expect(opts).To(gomega.HaveLen(1))
+			g.Expect(opts[0]).To(gomega.Equal(client.InNamespace(tc.wantNamespace)))
 		})
 	}
 }
