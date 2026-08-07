@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: proplet-rpc
+type: Opaque
+stringData:
+  token: "<your-rpc-bearer-token>"
+---
+apiVersion: propeller.propeller.absmach.eu/v1
+kind: Proplet
+metadata:
+  labels:
+    app.kubernetes.io/name: propeller-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: k8s-proplet-rpc
+spec:
+  type: k8s
+  k8s:
+    image: "ghcr.io/absmach/propeller/proplet:latest"
+    logLevel: info
+    replicas: 1
+    rpc:
+      enabled: true
+      port: 9094
+      tokenSecretRef:
+        name: proplet-rpc
+        key: token
+  connectionConfig:
+    tenantId: "<your-tenant-id>"
+    channelId: "<your-channel-id>"
+    entityId: "<your-proplet-entity-id>"
+    apiKey: "<your-proplet-api-key>"
+    mqttAddress: "tcp://your-mqtt-broker:1883"
+    mqttQos: 0
+    mqttTimeout: 30s
+  resources:
+    cpu: "50m"
+    memory: "128Mi"
