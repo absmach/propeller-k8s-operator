@@ -147,6 +147,25 @@ type K8sPropletSpec struct {
 	PluginDir string `json:"pluginDir,omitempty"`
 	// Env holds optional environment overrides for the proplet container.
 	Env *PropletEnvConfig `json:"env,omitempty,omitzero"`
+	// RPC exposes the proplet JSON-RPC server, which serves each deployed
+	// function as a callable method.
+	RPC *RPCSpec `json:"rpc,omitempty,omitzero"`
+}
+
+// RPCSpec configures the proplet JSON-RPC server. The proplet binds it to
+// loopback by default, so the operator binds all interfaces and fronts it with
+// a service to make it reachable from elsewhere in the cluster.
+type RPCSpec struct {
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:default=9094
+	Port int32 `json:"port,omitempty"`
+	// TokenSecretRef references a Secret whose key holds the bearer token the
+	// proplet requires on every RPC call. It is mandatory when Enabled is set,
+	// because a service makes the server reachable cluster wide.
+	TokenSecretRef *corev1.SecretKeySelector `json:"tokenSecretRef,omitempty,omitzero"`
 }
 
 // ConnectionConfig defines the MQTT connection configuration for a Proplet.

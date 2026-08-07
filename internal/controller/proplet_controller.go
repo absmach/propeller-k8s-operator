@@ -28,6 +28,7 @@ import (
 	"github.com/absmach/propeller/internal/mqtt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,6 +50,17 @@ var baseTopicFmt = "m/%s/c/%s"
 const PropletFinalizerName = "propeller.propeller.absmach.eu/finalizer"
 
 const aliveHistoryLimit = 10
+
+const (
+	defaultRPCPort = 9094
+	rpcPortName    = "rpc"
+	rpcBindAddress = "0.0.0.0"
+
+	envRPCEnabled     = "PROPLET_RPC_ENABLED"
+	envRPCPort        = "PROPLET_RPC_PORT"
+	envRPCBindAddress = "PROPLET_RPC_BIND_ADDRESS"
+	envRPCToken       = "PROPLET_RPC_TOKEN"
+)
 
 // PropletReconciler reconciles a Proplet object.
 type PropletReconciler struct {
@@ -84,6 +96,7 @@ type PropletReconciler struct {
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=propeller.propeller.absmach.eu,resources=proplets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 
 func (r *PropletReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx).WithValues("proplet", req.NamespacedName)
@@ -249,6 +262,12 @@ func (r *PropletReconciler) reconcileK8sProplet(ctx context.Context, proplet *pr
 		}
 	}
 
+	if err := r.reconcileRPCService(ctx, proplet); err != nil {
+		logger.Error(err, "failed to reconcile proplet rpc service")
+
+		return ctrl.Result{}, err
+	}
+
 	if err := r.updateK8sPropletStatus(ctx, proplet, deployment); err != nil {
 		logger.Error(err, "failed to update proplet status")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -309,13 +328,135 @@ func (r *PropletReconciler) buildPropletDeployment(proplet *propellerv1.Proplet)
 									corev1.ResourceMemory: *proplet.Spec.Resource.Memory(),
 								},
 							},
-							Env: buildPropletEnv(proplet),
+							Env:   buildPropletEnv(proplet),
+							Ports: rpcContainerPorts(proplet),
 						},
 					},
 				},
 			},
 		},
 	}
+}
+
+func (r *PropletReconciler) buildPropletService(proplet *propellerv1.Proplet) *corev1.Service {
+	port := rpcPort(proplet)
+
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-rpc", proplet.Name),
+			Namespace: proplet.Namespace,
+			Labels: map[string]string{
+				"app":                          proplet.Name,
+				"app.kubernetes.io/managed-by": "propeller-operator",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{"app": proplet.Name},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       rpcPortName,
+					Port:       port,
+					TargetPort: intstr.FromInt32(port),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+}
+
+func (r *PropletReconciler) reconcileRPCService(ctx context.Context, proplet *propellerv1.Proplet) error {
+	name := types.NamespacedName{
+		Name:      fmt.Sprintf("%s-rpc", proplet.Name),
+		Namespace: proplet.Namespace,
+	}
+
+	existing := &corev1.Service{}
+	err := r.Get(ctx, name, existing)
+
+	if !rpcEnabled(proplet) {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		return client.IgnoreNotFound(r.Delete(ctx, existing))
+	}
+
+	if proplet.Spec.K8s.RPC.TokenSecretRef == nil {
+		return errors.New("spec.k8s.rpc.tokenSecretRef is required when rpc is enabled")
+	}
+
+	desired := r.buildPropletService(proplet)
+	if err := controllerutil.SetControllerReference(proplet, desired, r.Scheme); err != nil {
+		return err
+	}
+
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return err
+	}
+
+	if !equality.Semantic.DeepEqual(existing.Spec.Ports, desired.Spec.Ports) ||
+		!equality.Semantic.DeepEqual(existing.Spec.Selector, desired.Spec.Selector) {
+		existing.Spec.Ports = desired.Spec.Ports
+		existing.Spec.Selector = desired.Spec.Selector
+
+		return r.Update(ctx, existing)
+	}
+
+	return nil
+}
+
+func rpcEnabled(proplet *propellerv1.Proplet) bool {
+	return proplet.Spec.K8s != nil && proplet.Spec.K8s.RPC != nil && proplet.Spec.K8s.RPC.Enabled
+}
+
+func rpcPort(proplet *propellerv1.Proplet) int32 {
+	if !rpcEnabled(proplet) || proplet.Spec.K8s.RPC.Port == 0 {
+		return defaultRPCPort
+	}
+
+	return proplet.Spec.K8s.RPC.Port
+}
+
+func rpcContainerPorts(proplet *propellerv1.Proplet) []corev1.ContainerPort {
+	if !rpcEnabled(proplet) {
+		return nil
+	}
+
+	return []corev1.ContainerPort{
+		{
+			Name:          rpcPortName,
+			ContainerPort: rpcPort(proplet),
+			Protocol:      corev1.ProtocolTCP,
+		},
+	}
+}
+
+func rpcEnvVars(proplet *propellerv1.Proplet) []corev1.EnvVar {
+	if !rpcEnabled(proplet) {
+		return nil
+	}
+
+	envVars := []corev1.EnvVar{
+		{Name: envRPCEnabled, Value: "true"},
+		{Name: envRPCPort, Value: fmt.Sprintf("%d", rpcPort(proplet))},
+		{Name: envRPCBindAddress, Value: rpcBindAddress},
+	}
+
+	if ref := proplet.Spec.K8s.RPC.TokenSecretRef; ref != nil {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:      envRPCToken,
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: ref},
+		})
+	}
+
+	return envVars
 }
 
 func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
@@ -396,6 +537,8 @@ func buildPropletEnv(proplet *propellerv1.Proplet) []corev1.EnvVar {
 		addEnv("PROPLET_MQTT_TLS_CLIENT_KEY", cfg.MqttTLSClientKey)
 		addBoolEnv("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY", cfg.MqttTLSInsecureSkipVerify)
 	}
+
+	envVars = append(envVars, rpcEnvVars(proplet)...)
 
 	return envVars
 }
