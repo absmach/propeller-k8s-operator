@@ -18,6 +18,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type (
@@ -103,5 +104,8 @@ type PropellerJobList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&PropellerJob{}, &PropellerJobList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &PropellerJob{}, &PropellerJobList{})
+		return nil
+	})
 }

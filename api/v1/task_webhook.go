@@ -1,33 +1,14 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1
 
 import (
 	"context"
-	"errors"
 
 	propellercron "github.com/absmach/propeller/internal/cron"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -35,8 +16,7 @@ var tasklog = logf.Log.WithName("task-resource")
 
 // SetupTaskWebhookWithManager registers the webhook for Task in the manager.
 func SetupTaskWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&Task{}).
+	return ctrl.NewWebhookManagedBy(mgr, &Task{}).
 		WithDefaulter(&TaskCustomDefaulter{}).
 		WithValidator(&TaskCustomValidator{}).
 		Complete()
@@ -47,14 +27,8 @@ func SetupTaskWebhookWithManager(mgr ctrl.Manager) error {
 // TaskCustomDefaulter applies defaults to Task resources.
 type TaskCustomDefaulter struct{}
 
-var _ webhook.CustomDefaulter = &TaskCustomDefaulter{}
-
 // Default sets default values on a Task.
-func (d *TaskCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
-	task, ok := obj.(*Task)
-	if !ok {
-		return errors.New("expected a Task object")
-	}
+func (d *TaskCustomDefaulter) Default(_ context.Context, task *Task) error {
 	tasklog.Info("defaulting", "name", task.Name)
 
 	if task.Spec.Kind == "" {
@@ -74,30 +48,20 @@ func (d *TaskCustomDefaulter) Default(_ context.Context, obj runtime.Object) err
 // TaskCustomValidator validates Task resources.
 type TaskCustomValidator struct{}
 
-var _ webhook.CustomValidator = &TaskCustomValidator{}
-
 // ValidateCreate validates a new Task.
-func (v *TaskCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	task, ok := obj.(*Task)
-	if !ok {
-		return nil, errors.New("expected a Task object")
-	}
+func (v *TaskCustomValidator) ValidateCreate(_ context.Context, task *Task) (admission.Warnings, error) {
 	tasklog.Info("validate create", "name", task.Name)
 	return nil, v.validateTask(task)
 }
 
 // ValidateUpdate validates an updated Task.
-func (v *TaskCustomValidator) ValidateUpdate(_ context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
-	task, ok := newObj.(*Task)
-	if !ok {
-		return nil, errors.New("expected a Task object")
-	}
-	tasklog.Info("validate update", "name", task.Name)
-	return nil, v.validateTask(task)
+func (v *TaskCustomValidator) ValidateUpdate(_ context.Context, _, newObj *Task) (admission.Warnings, error) {
+	tasklog.Info("validate update", "name", newObj.Name)
+	return nil, v.validateTask(newObj)
 }
 
 // ValidateDelete validates Task deletion (no-op).
-func (v *TaskCustomValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+func (v *TaskCustomValidator) ValidateDelete(_ context.Context, _ *Task) (admission.Warnings, error) {
 	return nil, nil
 }
 
